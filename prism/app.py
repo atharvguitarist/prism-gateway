@@ -11,10 +11,11 @@ from typing import Optional
 import httpx
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from starlette.routing import Route
 
 from .config import GatewayConfig, Settings, load_gateway_config, load_pricing
+from . import metrics as prom
 from .gateway import Gateway, err_body
 from .pricing import PriceTable, usd_to_nusd
 from .providers import OpenAICompatAdapter, ProviderAdapter
@@ -22,6 +23,57 @@ from .routing_eval import run_eval
 from .store import Store
 
 CONSOLE = Path(__file__).parent / "console" / "index.html"
+
+_PATCH_FIELDS = {"team", "monthly_budget_usd", "rate_limit", "model_allowlist", "semantic_cache"}
+
+
+def parse_key_patch(spec, known_model) -> dict:
+    """Validate a partial key update; raises ValueError with a client-safe message."""
+    if not isinstance(spec, dict) or not spec:
+        raise ValueError("body must be a non-empty JSON object")
+    unknown = sorted(set(spec) - _PATCH_FIELDS)
+    if unknown:
+        raise ValueError(f"unknown field(s): {', '.join(unknown)} (allowed: {', '.join(sorted(_PATCH_FIELDS))})")
+    out: dict = {}
+    if "team" in spec:
+        if not isinstance(spec["team"], str) or not spec["team"].strip():
+            raise ValueError("team must be a non-empty string")
+        out["team"] = spec["team"].strip()
+    if "monthly_budget_usd" in spec:
+        b = spec["monthly_budget_usd"]
+        if isinstance(b, bool) or not isinstance(b, (int, float)) or b < 0:
+            raise ValueError("monthly_budget_usd must be a number >= 0")
+        out["monthly_budget_usd"] = b
+    if "rate_limit" in spec:
+        rl = spec["rate_limit"]
+        if not isinstance(rl, dict) or not rl or set(rl) - {"requests_per_minute", "tokens_per_minute"}:
+            raise ValueError("rate_limit may contain requests_per_minute and/or tokens_per_minute")
+        for k, v in rl.items():
+            if v is None and k == "tokens_per_minute":
+                continue   # null clears the token limit
+            if isinstance(v, bool) or not isinstance(v, int) or v <= 0:
+                raise ValueError(f"rate_limit.{k} must be a positive integer")
+        out["rate_limit"] = rl
+    if "model_allowlist" in spec:
+        a = spec["model_allowlist"]
+        if not isinstance(a, list) or not a or not all(isinstance(x, str) for x in a):
+            raise ValueError("model_allowlist must be a non-empty list of strings")
+        bad = [x for x in a if not known_model(x)]
+        if bad:
+            raise ValueError(f"unknown model(s) in allowlist: {', '.join(bad)}")
+        out["model_allowlist"] = a
+    if "semantic_cache" in spec:
+        sc = spec["semantic_cache"]
+        if not isinstance(sc, dict) or not sc or set(sc) - {"enabled", "similarity_threshold"}:
+            raise ValueError("semantic_cache may contain enabled and/or similarity_threshold")
+        if "enabled" in sc and not isinstance(sc["enabled"], bool):
+            raise ValueError("semantic_cache.enabled must be a boolean")
+        if "similarity_threshold" in sc and (isinstance(sc["similarity_threshold"], bool)
+                                             or not isinstance(sc["similarity_threshold"], (int, float))
+                                             or not 0 < sc["similarity_threshold"] <= 1):
+            raise ValueError("semantic_cache.similarity_threshold must be a number in (0, 1]")
+        out["semantic_cache"] = sc
+    return out
 
 
 def create_app(settings: Optional[Settings] = None, *, adapters: Optional[dict[str, ProviderAdapter]] = None,
@@ -108,8 +160,41 @@ def create_app(settings: Optional[Settings] = None, *, adapters: Optional[dict[s
 
     async def providers_health(request: Request) -> Response:
         gw: Gateway = request.app.state.gw
-        return JSONResponse({"data": gw.health.snapshot(list(gw.cfg.providers)),
+        names = list(gw.cfg.providers)
+        circuits = {c["provider"]: c for c in gw.breaker.snapshot(names)}
+        data = [{**h, **{k: v for k, v in circuits[h["provider"]].items() if k != "provider"}}
+                for h in gw.health.snapshot(names)]
+        return JSONResponse({"data": data,
                              "gateway_overhead_ms": request.app.state.store.overhead_percentiles()})
+
+    async def purge_cache(request: Request) -> Response:
+        key = request.query_params.get("key") or None
+        n = request.app.state.gw.cache.purge(key)
+        return JSONResponse({"purged": n, "scope": key or "all"})
+
+    async def metrics(request: Request) -> Response:
+        text = prom.render(request.app.state.gw, request.app.state.store)
+        return PlainTextResponse(text, media_type="text/plain; version=0.0.4; charset=utf-8")
+
+    async def config_view(request: Request) -> Response:
+        """The effective gateway config. Provider API keys are never included."""
+        gw: Gateway = request.app.state.gw
+        c = gw.cfg
+        return JSONResponse({
+            "providers": [{"name": p.name, "base_url": p.base_url, "models": p.models} for p in c.providers.values()],
+            "aliases": {n: {"primary": a.primary, "fallbacks": a.fallbacks, "route_by_difficulty": a.route_by_difficulty}
+                        for n, a in c.aliases.items()},
+            "retry": {"max_attempts": c.retry.max_attempts, "initial_backoff_ms": c.retry.initial_backoff_ms,
+                      "backoff_multiplier": c.retry.backoff_multiplier, "max_total_ms": c.retry.max_total_ms},
+            "timeouts": {"upstream_ms": round(c.upstream_timeout_s * 1000),
+                         "stream_idle_ms": round(c.stream_idle_timeout_s * 1000)},
+            "cache": {"ttl_seconds": c.cache.ttl_seconds, "max_entries_per_key": c.cache.max_entries_per_key,
+                      "default_threshold": c.cache.default_threshold},
+            "escalation": {"enabled": c.escalation_enabled},
+            "circuit_breaker": {"enabled": gw.breaker.enabled, "failure_threshold": gw.breaker.threshold,
+                                "cooldown_s": gw.breaker.cooldown},
+            "guardrails": {"pii": c.guardrails.pii, "injection": c.guardrails.injection},
+        })
 
     async def routing_eval(request: Request) -> Response:
         data_dir: Path = request.app.state.settings.data_dir
@@ -139,6 +224,20 @@ def create_app(settings: Optional[Settings] = None, *, adapters: Optional[dict[s
                                          "invalid_request_error"), status_code=400)
         t = request.app.state.store.create_tenant(spec, gw.cfg.cache.default_threshold)
         return JSONResponse(t.public(), status_code=201)
+
+    async def patch_key(request: Request) -> Response:
+        gw: Gateway = request.app.state.gw
+        try:
+            changes = parse_key_patch(await request.json(), lambda m: m in gw.cfg.aliases or m in gw.prices)
+        except json.JSONDecodeError:
+            return JSONResponse(err_body("Invalid key update: body is not valid JSON", "invalid_request_error"),
+                                status_code=400)
+        except ValueError as e:
+            return JSONResponse(err_body(f"Invalid key update: {e}", "invalid_request_error"), status_code=400)
+        t = request.app.state.store.update_tenant(request.path_params["key"], changes)
+        if t is None:
+            return JSONResponse(err_body("no such key", "not_found_error"), status_code=404)
+        return JSONResponse(t.public())
 
     async def disable_key(request: Request) -> Response:
         ok = request.app.state.store.set_status(request.path_params["key"], "disabled")
@@ -172,10 +271,14 @@ def create_app(settings: Optional[Settings] = None, *, adapters: Optional[dict[s
         Route("/admin/usage", admin_only(usage)),
         Route("/admin/logs", admin_only(logs)),
         Route("/admin/cache/stats", admin_only(cache_stats)),
+        Route("/admin/cache", admin_only(purge_cache), methods=["DELETE"]),
+        Route("/admin/config", admin_only(config_view)),
+        Route("/metrics", admin_only(metrics)),
         Route("/admin/providers/health", admin_only(providers_health)),
         Route("/admin/routing/eval", admin_only(routing_eval)),
         Route("/admin/keys", admin_only(list_keys), methods=["GET"]),
         Route("/admin/keys", admin_only(create_key), methods=["POST"]),
+        Route("/admin/keys/{key}", admin_only(patch_key), methods=["PATCH"]),
         Route("/admin/keys/{key}/disable", admin_only(disable_key), methods=["POST"]),
         Route("/admin/keys/{key}/enable", admin_only(enable_key), methods=["POST"]),
         Route("/admin/keys/{key}/rotate", admin_only(rotate_key), methods=["POST"]),
