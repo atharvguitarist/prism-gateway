@@ -55,6 +55,19 @@ class CacheConfig:
 
 
 @dataclass
+class BreakerConfig:
+    enabled: bool = True
+    failure_threshold: int = 3     # consecutive provider failures that open the circuit
+    cooldown_s: float = 5.0        # time out of rotation before one probe request is let through
+
+
+@dataclass
+class GuardrailConfig:
+    pii: str = "redact"            # off | redact | block
+    injection: str = "flag"        # off | flag | block
+
+
+@dataclass
 class GatewayConfig:
     providers: dict[str, ProviderConfig]
     aliases: dict[str, AliasConfig]
@@ -63,6 +76,8 @@ class GatewayConfig:
     escalation_enabled: bool = True
     upstream_timeout_s: float = 2.0
     stream_idle_timeout_s: float = 5.0
+    breaker: BreakerConfig = field(default_factory=BreakerConfig)
+    guardrails: GuardrailConfig = field(default_factory=GuardrailConfig)
 
     def provider_for_model(self, model: str) -> Optional[ProviderConfig]:
         for p in self.providers.values():
@@ -147,6 +162,19 @@ def load_gateway_config(path: Path, settings: Optional[Settings] = None) -> Gate
         if "PRISM_STREAM_IDLE_TIMEOUT_MS" in os.environ:
             idle_ms = settings.stream_idle_timeout_ms
 
+    b = raw.get("circuit_breaker", {})
+    breaker = BreakerConfig(
+        enabled=bool(b.get("enabled", True)),
+        failure_threshold=int(b.get("failure_threshold", 3)),
+        cooldown_s=float(b.get("cooldown_s", 5.0)),
+    )
+    g = raw.get("guardrails", {})
+    guardrails = GuardrailConfig(pii=g.get("pii", "redact"), injection=g.get("injection", "flag"))
+    if guardrails.pii not in ("off", "redact", "block"):
+        raise ValueError(f"guardrails.pii must be off|redact|block, got '{guardrails.pii}'")
+    if guardrails.injection not in ("off", "flag", "block"):
+        raise ValueError(f"guardrails.injection must be off|flag|block, got '{guardrails.injection}'")
+
     return GatewayConfig(
         providers=providers,
         aliases=aliases,
@@ -155,4 +183,6 @@ def load_gateway_config(path: Path, settings: Optional[Settings] = None) -> Gate
         escalation_enabled=raw.get("escalation", {}).get("enabled", True),
         upstream_timeout_s=up_ms / 1000,
         stream_idle_timeout_s=idle_ms / 1000,
+        breaker=breaker,
+        guardrails=guardrails,
     )
