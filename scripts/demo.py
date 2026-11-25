@@ -206,6 +206,17 @@ def main():
     show_headers(h)
     check(s == 200 and h["x-prism-fallback"] == "true" and h["x-prism-provider"].startswith("beta/"),
           f"alpha down → served by beta with x-prism-fallback: true ({time.time() - t0:.1f}s incl. retries)")
+    s, h, _ = chat(gw, SEARCH, salt + "Failover drill: second request, circuit open")
+    check(s == 200 and h.get("x-prism-circuit-skipped") == "alpha",
+          "circuit breaker open → alpha skipped entirely (no retry/timeout tax on later requests)")
+    _, _, gcfg = http_json("GET", gw + "/admin/config", admin=adm)
+    cooldown = float(gcfg.get("circuit_breaker", {}).get("cooldown_s", 5)) + 0.5
+
+    def wait_cooldown(why):
+        say(f"      …waiting {cooldown:.1f}s for the circuit-breaker cooldown ({why})", "d")
+        time.sleep(cooldown)
+
+    wait_cooldown("next request is the half-open probe")
     say("      …now alpha is merely SLOW (3 s) — the 2 s upstream timeout must keep the client from hanging", "d")
     mock(args.alpha, {"mode": "ok", "latency_ms": 3000})
     t0 = time.time()
@@ -213,11 +224,13 @@ def main():
     dt = time.time() - t0
     say(f"      answered in {dt:.1f}s by {h['x-prism-provider']} (fallback={h['x-prism-fallback']})", "c")
     check(s == 200 and dt < 3.0 and h["x-prism-fallback"] == "true", "slow provider → timeout fires → fallback; no hang")
+    wait_cooldown("let alpha be probed again")
     say("      …alpha flaky (30% errors): 20 requests", "d")
     mock(args.alpha, {"mode": "ok", "latency_ms": 0, "fail_rate": 0.3})
     codes = [chat(gw, RESEARCH, salt + f"flaky drill {i}")[0] for i in range(20)]
     check(all(c == 200 for c in codes), f"retries absorb a 30% error rate ({codes.count(200)}/20 succeeded)")
     mock(args.alpha, {"mode": "ok", "latency_ms": 0, "fail_rate": 0})
+    wait_cooldown("a probe closes the circuit")
     s, h, _ = chat(gw, SEARCH, salt + "Failover drill: alpha restored?")
     check(h["x-prism-provider"].startswith("alpha/") and h["x-prism-fallback"] == "false", "alpha restored → traffic returns to the primary")
 
