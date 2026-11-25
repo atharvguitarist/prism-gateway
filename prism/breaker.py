@@ -72,6 +72,10 @@ class CircuitBreaker:
         """Raw state, ignoring cooldown expiry: did the circuit open (or re-open) and has not yet been probed?"""
         return self.enabled and self._st(name).state == OPEN
 
+    def probing(self, name: str) -> bool:
+        """True right after `before_call` admitted this request as the half-open probe."""
+        return self.enabled and self._st(name).state == HALF_OPEN
+
     def state(self, name: str) -> str:
         s = self._st(name)
         if s.state == OPEN and self._clock() - s.opened_at >= self.cooldown:
