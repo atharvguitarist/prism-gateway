@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS request_logs (
     upstream_ms        INTEGER NOT NULL DEFAULT 0,
     overhead_ms        INTEGER NOT NULL DEFAULT 0,
     error              TEXT,
+    flags              TEXT,
     created_at         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_logs_key_time ON request_logs (virtual_key, created_at);
@@ -161,6 +162,7 @@ class LogEntry:
     upstream_ms: int = 0
     overhead_ms: int = 0
     error: Optional[str] = None
+    flags: Optional[str] = None      # comma-separated guardrail / circuit-breaker events, e.g. 'pii_redacted:email'
 
     @property
     def served(self) -> bool:
@@ -188,6 +190,9 @@ class Store:
             self._conn.execute("PRAGMA synchronous=NORMAL")
             self._conn.execute("PRAGMA busy_timeout=5000")
             self._conn.executescript(SCHEMA)
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(request_logs)")}
+            if "flags" not in cols:   # databases created before guardrails / circuit breaker existed
+                self._conn.execute("ALTER TABLE request_logs ADD COLUMN flags TEXT")
 
     def close(self) -> None:
         with self._lock:
@@ -232,6 +237,34 @@ class Store:
         self.seed_tenants([{**spec, "virtual_key": vk}], default_threshold)
         return self.get_tenant(vk)  # type: ignore[return-value]
 
+    def update_tenant(self, virtual_key: str, changes: dict) -> Optional[Tenant]:
+        """Apply a validated partial update (see app.parse_key_patch). Takes effect on the next request."""
+        sets: list[str] = []
+        args: list[Any] = []
+        if "team" in changes:
+            sets.append("team=?"); args.append(changes["team"])
+        if "monthly_budget_usd" in changes:
+            sets.append("monthly_budget_nusd=?"); args.append(usd_to_nusd(changes["monthly_budget_usd"]))
+        rl = changes.get("rate_limit") or {}
+        if "requests_per_minute" in rl:
+            sets.append("rpm=?"); args.append(rl["requests_per_minute"])
+        if "tokens_per_minute" in rl:
+            sets.append("tpm=?"); args.append(rl["tokens_per_minute"])
+        if "model_allowlist" in changes:
+            sets.append("allowlist=?"); args.append(json.dumps(changes["model_allowlist"]))
+        sc = changes.get("semantic_cache")
+        if sc is not None:
+            if "enabled" in sc:
+                sets.append("cache_enabled=?"); args.append(int(bool(sc["enabled"])))
+            if "similarity_threshold" in sc:
+                sets.append("cache_threshold=?"); args.append(sc["similarity_threshold"])
+        with self._lock:
+            if self._conn.execute("SELECT 1 FROM keys WHERE virtual_key=?", (virtual_key,)).fetchone() is None:
+                return None
+            if sets:
+                self._conn.execute(f"UPDATE keys SET {', '.join(sets)} WHERE virtual_key=?", (*args, virtual_key))
+        return self.get_tenant(virtual_key)
+
     def set_status(self, virtual_key: str, status: str) -> bool:
         with self._lock:
             return self._conn.execute(
@@ -272,11 +305,11 @@ class Store:
                     "INSERT INTO request_logs (request_id, virtual_key, requested_model, resolved_provider,"
                     " resolved_model, status, http_status, prompt_tokens, completion_tokens, cost_nusd, cache,"
                     " cache_lookup, saved_nusd, fallback, escalated, route_reason, retries, stream, latency_ms,"
-                    " upstream_ms, overhead_ms, error, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " upstream_ms, overhead_ms, error, flags, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (e.request_id, e.virtual_key, e.requested_model, e.resolved_provider, e.resolved_model,
                      e.status, e.http_status, e.prompt_tokens, e.completion_tokens, e.cost_nusd, e.cache,
                      int(e.cache_lookup), e.saved_nusd, int(e.fallback), int(e.escalated), e.route_reason,
-                     e.retries, int(e.stream), e.latency_ms, e.upstream_ms, e.overhead_ms, e.error, iso(when)),
+                     e.retries, int(e.stream), e.latency_ms, e.upstream_ms, e.overhead_ms, e.error, e.flags, iso(when)),
                 )
                 if e.virtual_key and (e.served or e.cost_nusd or e.prompt_tokens or e.completion_tokens):
                     self._conn.execute(
@@ -415,6 +448,27 @@ class Store:
                        for p in per_key],
         }
 
+    def status_counts(self) -> dict[str, int]:
+        """Requests by outcome for the current UTC month (feeds /metrics)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT status, COUNT(*) AS n FROM request_logs WHERE created_at >= ? GROUP BY status",
+                (self._window(None, None)[2],)).fetchall()
+        return {r["status"]: r["n"] for r in rows}
+
+    def guardrail_counts(self) -> dict[str, int]:
+        """Guardrail / circuit-breaker events (the `flags` column) for the current UTC month."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT flags, COUNT(*) AS n FROM request_logs WHERE created_at >= ? AND flags IS NOT NULL "
+                "GROUP BY flags", (self._window(None, None)[2],)).fetchall()
+        out: dict[str, int] = {}
+        for r in rows:
+            for ev in r["flags"].split(","):
+                if ev:
+                    out[ev] = out.get(ev, 0) + r["n"]
+        return out
+
     def provider_stats(self, window_s: int = 300) -> list[dict[str, Any]]:
         since = iso(utcnow() - timedelta(seconds=window_s))
         with self._lock:
@@ -453,6 +507,12 @@ class Store:
         with self._lock:
             self._conn.execute(
                 "UPDATE cache_entries SET hit_count = hit_count + 1, last_hit_at = ? WHERE id = ?", (now, entry_id))
+
+    def purge_cache_entries(self, virtual_key: Optional[str] = None) -> int:
+        with self._lock:
+            if virtual_key:
+                return self._conn.execute("DELETE FROM cache_entries WHERE virtual_key=?", (virtual_key,)).rowcount
+            return self._conn.execute("DELETE FROM cache_entries").rowcount
 
     def delete_cache_entries(self, ids: list[int]) -> None:
         if not ids:
