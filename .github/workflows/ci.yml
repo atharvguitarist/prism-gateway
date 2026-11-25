@@ -1,0 +1,29 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - name: Routing eval (provided + held-out)
+        run: |
+          python -m prism.routing_eval
+          python -m prism.routing_eval --file data/routing_eval_heldout.jsonl
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack (alpha, beta, prism)
+        run: docker compose up --build -d --wait
+      - name: Run the asserted 10-step demo drill + provided smoke/load tests against the containers
+        run: python3 scripts/demo.py
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - run: docker compose down -v
