@@ -90,6 +90,7 @@ def test_failover_when_primary_down_sets_header_and_log(client, providers):
     assert row["fallback"] is True and row["retries"] == 3 and row["resolved_provider"] == "beta"
     assert providers["alpha"].calls == ["alpha-small"] * 3        # retried with backoff before failing over
     providers["alpha"].mode = "ok"
+    client.app_state.gw.breaker.cooldown = 0   # the circuit tripped; let the cooldown lapse so the next call probes
     assert chat(client, SEARCH, "restored now").headers["x-prism-provider"] == "alpha/alpha-small"  # traffic returns
 
 
