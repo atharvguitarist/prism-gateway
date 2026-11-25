@@ -10,8 +10,11 @@ Request pipeline (the order matters and is documented in the README):
     6. rate limit (atomic sliding window)  -> 429 rate_limit_exceeded
     7. `auto`: classify difficulty -> tier (logged with its reason)
     8. semantic cache lookup (per key)     -> hit: served at $0
-    9. upstream call: timeout, retry w/ exponential backoff, ordered provider failover
+    9. upstream call: circuit breaker, timeout, retry w/ exponential backoff, ordered provider failover
    10. meter from provider-reported usage, write request log + usage atomically, respond
+
+Guardrails (PII redaction / injection screening) run right after the allowlist check, so a blocked request
+consumes no rate-limit slot and redacted text is what the cache and the provider see.
 
 Every request -- including rejected ones -- produces exactly one request-log row.
 """
@@ -29,8 +32,10 @@ import httpx
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response, StreamingResponse
 
+from .breaker import CircuitBreaker
 from .cache import SemanticCache, is_cacheable_request, is_refusal, last_user_text
 from .config import GatewayConfig
+from .guardrails import scan
 from .health import ProviderHealth
 from .limiter import SlidingWindowLimiter
 from .pricing import PriceTable, UnknownModelPrice, format_usd
@@ -42,9 +47,10 @@ MAX_BODY_BYTES = 2 * 1024 * 1024
 
 
 class AllProvidersFailed(Exception):
-    def __init__(self, last: Optional[UpstreamError], failed_attempts: int, scope: str):
+    def __init__(self, last: Optional[UpstreamError], failed_attempts: int, scope: str,
+                 skipped: tuple[str, ...] = ()):
         super().__init__(str(last) if last else "no provider available")
-        self.last, self.failed_attempts, self.scope = last, failed_attempts, scope
+        self.last, self.failed_attempts, self.scope, self.skipped = last, failed_attempts, scope, skipped
 
 
 @dataclass
@@ -55,6 +61,7 @@ class Served:
     fallback: bool
     failed_attempts: int
     upstream_ms: int
+    skipped: tuple[str, ...] = ()   # providers passed over because their circuit was open
 
 
 def _hdr(s: str, limit: int = 240) -> str:
@@ -75,6 +82,8 @@ class Gateway:
                                             max_entries_per_key=cfg.cache.max_entries_per_key)
         self._sleep = sleep
         self.health = ProviderHealth(window_s=60.0)
+        bc = cfg.breaker
+        self.breaker = CircuitBreaker(bc.failure_threshold, bc.cooldown_s, bc.enabled)
         self._bg: set[asyncio.Task] = set()
         self._validate_config()
 
@@ -118,36 +127,86 @@ class Gateway:
             h.update(extra)
         return h
 
+    def _budget_hdr(self, tenant: Tenant) -> dict[str, str]:
+        left = max(0, tenant.monthly_budget_nusd - self.store.month_spend_nusd(tenant.virtual_key))
+        return {"x-prism-budget-remaining-usd": format_usd(left)}
+
+    @staticmethod
+    def _add_flags(log: LogEntry, *flags: str) -> None:
+        have = [f for f in (log.flags or "").split(",") if f]
+        log.flags = ",".join(have + [f for f in flags if f and f not in have]) or None
+
+    def _note_skipped(self, log: LogEntry, skipped: tuple[str, ...]) -> dict[str, str]:
+        """Record + expose providers that were passed over because their circuit was open."""
+        if not skipped:
+            return {}
+        self._add_flags(log, *[f"circuit_skipped:{n}" for n in skipped])
+        return {"x-prism-circuit-skipped": ",".join(skipped)}
+
     def _spawn(self, coro) -> None:
         t = asyncio.ensure_future(coro)
         self._bg.add(t)
         t.add_done_callback(self._bg.discard)
 
     # ------------------------------------------------------------------ upstream
+    @staticmethod
+    def _counts_against_provider(e: UpstreamError) -> bool:
+        """Does this failure say something about the provider's health? A provider 4xx is about the
+        request (bad payload), not the provider, so it must never open the circuit."""
+        if e.kind == "http":
+            return e.status is None or e.status >= 500
+        return True   # timeout | connect | malformed | rate_limited
+
     async def _run_chain(self, chain: list[str], scope: str, call) -> Served:
-        """Try each model in `chain` in order; retry transient errors with exponential backoff;
-        fail over on down / rate-limited / timed-out providers. Every attempt has a timeout."""
+        """Try each model in `chain` in order; skip providers whose circuit is open; retry transient errors
+        with exponential backoff; fail over on down / rate-limited / timed-out providers. Every attempt has a
+        timeout. If *every* provider in the chain is open, all are tried anyway (fail open)."""
         rc = self.cfg.retry
         start, failed, last = time.perf_counter(), 0, None
+
+        admit: dict[str, bool] = {}          # one breaker decision per provider per request
+        for m in chain:
+            name = self._provider_of(m).name
+            if name not in admit:
+                admit[name] = self.breaker.before_call(name)
+        fail_open = bool(admit) and not any(admit.values())
+        if fail_open:
+            admit = {n: True for n in admit}
+        skipped: list[str] = []
+
         for idx, model in enumerate(chain):
             adapter = self._provider_of(model)
-            for attempt in range(rc.max_attempts):
+            name = adapter.name
+            if not admit[name]:
+                if name not in skipped:
+                    skipped.append(name)
+                continue
+            if not fail_open and self.breaker.is_open(name):
+                continue                      # tripped earlier in this very request: stop hammering it
+            attempts = 1 if (not fail_open and self.breaker.probing(name)) else rc.max_attempts  # a probe is one shot
+            for attempt in range(attempts):
                 if failed and (time.perf_counter() - start) * 1000 > rc.max_total_ms:
-                    raise AllProvidersFailed(last, failed, scope)
+                    raise AllProvidersFailed(last, failed, scope, tuple(skipped))
                 t0 = time.perf_counter()
                 try:
                     res = await call(adapter, model)
                     ms = int((time.perf_counter() - t0) * 1000)
-                    self.health.record(adapter.name, True, ms)
-                    return Served(model, adapter.name, res, idx > 0, failed, ms)
+                    self.health.record(name, True, ms)
+                    self.breaker.record_success(name)
+                    return Served(model, name, res, idx > 0, failed, ms, tuple(skipped))
                 except UpstreamError as e:
-                    self.health.record(adapter.name, False, int((time.perf_counter() - t0) * 1000), e.kind)
+                    self.health.record(name, False, int((time.perf_counter() - t0) * 1000), e.kind)
                     last, failed = e, failed + 1
-                    if e.retry_same and attempt + 1 < rc.max_attempts:
+                    tripped = False
+                    if self._counts_against_provider(e):
+                        tripped = self.breaker.record_failure(name, e.kind)
+                    else:
+                        self.breaker.record_success(name)   # it answered; the request was the problem
+                    if e.retry_same and not tripped and attempt + 1 < attempts:
                         await self._sleep(rc.initial_backoff_ms / 1000 * (rc.backoff_multiplier ** attempt))
                         continue
                     break  # move on to the next provider in the chain
-        raise AllProvidersFailed(last, failed, scope)
+        raise AllProvidersFailed(last, failed, scope, tuple(skipped))
 
     async def _chat_chain(self, chain, scope, payload) -> Served:
         p = {**payload, "stream": False}
@@ -216,6 +275,31 @@ class Gateway:
                           err_body(f"Model '{requested}' is not allowed for this key (allowed: "
                                    f"{', '.join(tenant.allowlist)})", "model_not_allowed"))
 
+        # 4b --- guardrails: PII redaction / injection screening, before cache and provider
+        gcfg = self.cfg.guardrails
+        guard_hdr: dict[str, str] = {}
+        if gcfg.pii != "off" or gcfg.injection != "off":
+            g = scan(messages, gcfg.pii, gcfg.injection)
+            if g.pii_types and gcfg.pii == "block":
+                log.flags = "blocked:pii"
+                return finish(400, "rejected_guardrail",
+                              err_body("Request blocked: it appears to contain sensitive data "
+                                       f"({', '.join(g.pii_types)}). Remove it and retry.",
+                                       "guardrail_violation", "pii_detected"),
+                              hdr_extra={"x-prism-guardrail": "blocked:pii"})
+            if g.injection_types and gcfg.injection == "block":
+                log.flags = "blocked:injection"
+                return finish(400, "rejected_guardrail",
+                              err_body("Request blocked: it looks like a prompt-injection attempt "
+                                       f"({', '.join(g.injection_types)}).",
+                                       "guardrail_violation", "prompt_injection_detected"),
+                              hdr_extra={"x-prism-guardrail": "blocked:injection"})
+            if g.messages is not None:
+                messages = g.messages      # redacted copy: this is what the cache and the provider will see
+            if g.flags:
+                log.flags = g.flags
+                guard_hdr = {"x-prism-guardrail": g.flags}
+
         # 5 --- budget (read-only here; money is added atomically when the request completes)
         spent = self.store.month_spend_nusd(tenant.virtual_key)
         if spent >= tenant.monthly_budget_nusd:
@@ -237,7 +321,7 @@ class Gateway:
                 return self._rate_limited(finish, tl.retry_after_s, f"{tenant.tpm} tokens/minute")
 
         # 7 --- smart routing
-        extra_hdr: dict[str, str] = {}
+        extra_hdr: dict[str, str] = dict(guard_hdr)
         if is_auto:
             decision = classify(prompt_text)
             tier, reason = decision.tier, decision.short_reason()
@@ -251,9 +335,9 @@ class Gateway:
                 tier = allowed_tiers[0]
             scope, chain = tier, self.cfg.aliases[tier].chain
             log.route_reason = reason
-            extra_hdr = {"x-prism-route": f"auto:{tier}", "x-prism-route-reason": _hdr(reason)}
+            extra_hdr.update({"x-prism-route": f"auto:{tier}", "x-prism-route-reason": _hdr(reason)})
 
-        payload = {k: v for k, v in body.items()}
+        payload = {**body, "messages": messages}
         t_pre = time.perf_counter()
 
         # 8 --- semantic cache
@@ -310,7 +394,8 @@ class Gateway:
         self.store.record_request(log)
         content, model = e.response["content"], e.response.get("model", "cached")
         h = self._contract_headers(rid, provider=e.origin, cache="hit", cost=0,
-                                   extra={**extra_hdr, "x-prism-cache-similarity": f"{hit.similarity:.3f}"})
+                                   extra={**extra_hdr, **self._budget_hdr(tenant),
+                                          "x-prism-cache-similarity": f"{hit.similarity:.3f}"})
         cid, created = "chatcmpl-" + uuid.uuid4().hex[:24], int(time.time())
         zero = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         if not stream:
@@ -386,15 +471,18 @@ class Gateway:
             self.cache.put(tenant.virtual_key, scope, messages,
                            {"model": final_model, "content": content, "usage": body["usage"]},
                            f"{final_provider}/{final_model}", cost)
+        skip_hdr = self._note_skipped(log, served.skipped)
         self.store.record_request(log)
         h = self._contract_headers(rid, provider=f"{final_provider}/{final_model}", cache="miss",
                                    fallback=fallback, cost=cost,
-                                   extra={**extra_hdr, **({"x-prism-escalated": "true"} if escalated else {})})
+                                   extra={**extra_hdr, **skip_hdr, **self._budget_hdr(tenant),
+                                          **({"x-prism-escalated": "true"} if escalated else {})})
         return JSONResponse(body, headers=h)
 
     def _upstream_failed(self, e: AllProvidersFailed, finish, log: LogEntry, t0, t_pre, tpm_key, tenant, est_tokens):
         if tenant.tpm:
             self.limiter.adjust(tpm_key, -est_tokens)
+        self._note_skipped(log, e.skipped)
         log.retries, log.error = e.failed_attempts, str(e)[:300]
         log.upstream_ms = int((time.perf_counter() - t_pre) * 1000)
         kind = e.last.kind if e.last else "none"
@@ -415,8 +503,10 @@ class Gateway:
         log.fallback, log.retries = served.fallback, served.failed_attempts
         log.overhead_ms = int((t_pre - t0) * 1000)
         t_up = time.perf_counter()
+        skip_hdr = self._note_skipped(log, served.skipped)
+        # cost is unknown until the final usage chunk, so the budget header reflects spend before this request
         h = self._contract_headers(rid, provider=provider_hdr, cache="miss", fallback=served.fallback,
-                                   cost=None, extra=extra_hdr)   # cost unknown until the final usage chunk
+                                   cost=None, extra={**extra_hdr, **skip_hdr, **self._budget_hdr(tenant)})
         h.update({"cache-control": "no-cache", "x-accel-buffering": "no"})
 
         async def body() -> AsyncIterator[bytes]:
