@@ -174,5 +174,11 @@ class SemanticCache:
             self._index[k] = [e for e in bucket if e.id not in ids]
         self.store.delete_cache_entries(list(ids))
 
+    def purge(self, virtual_key: Optional[str] = None) -> int:
+        """Drop one key's entries (or all of them); returns how many were removed."""
+        n = self.store.purge_cache_entries(virtual_key)
+        self.reload()
+        return n
+
     def size(self, virtual_key: Optional[str] = None) -> int:
         return sum(len(b) for (k, _), b in self._index.items() if virtual_key in (None, k))
