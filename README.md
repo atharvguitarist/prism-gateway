@@ -191,7 +191,7 @@ Aliases: `fast` → `alpha-small` (fallback `beta-small`), `smart` → `alpha-la
 | `PRISM_STREAM_IDLE_TIMEOUT_MS` | `5000` | Max silence between chunks of an in-progress stream. |
 | `PRISM_PROVIDER_<NAME>_API_KEY` / `_BASE_URL` | from config | Override a provider's secret/URL without touching files, e.g. `PRISM_PROVIDER_ALPHA_API_KEY`. |
 
-Optional sections in the gateway config JSON: `retry` (`max_attempts`, `initial_backoff_ms`, `backoff_multiplier`, `max_total_ms`), `timeouts`, `cache` (`ttl_seconds`, `max_entries_per_key`, `default_threshold`), `escalation.enabled`. A model belongs to the provider whose name prefixes it (`alpha-small` → `alpha`), or list models explicitly with `"models": [...]` on a provider. Provider API keys are gateway secrets: never returned to callers, never written to logs, excluded from `repr()`.
+Optional sections in the gateway config JSON: `retry` (`max_attempts`, `initial_backoff_ms`, `backoff_multiplier`, `max_total_ms`), `timeouts`, `cache` (`ttl_seconds`, `max_entries_per_key`, `default_threshold`), `escalation.enabled`, `circuit_breaker` (`enabled`, `failure_threshold` = 3, `cooldown_s` = 5), `guardrails` (`pii`: `off`\|`redact`\|`block`, default `redact`; `injection`: `off`\|`flag`\|`block`, default `flag`). A model belongs to the provider whose name prefixes it (`alpha-small` → `alpha`), or list models explicitly with `"models": [...]` on a provider. Provider API keys are gateway secrets: never returned to callers, never written to logs, excluded from `repr()`.
 
 Seed tenants are inserted **only if absent**, so keys disabled/rotated through the admin API stay that way across restarts.
 
@@ -239,7 +239,11 @@ OpenAI-compatible request/response. `"model"` is an alias (`fast`, `smart`, `aut
 | `GET /admin/usage?key=&from=&to=` | spend and tokens for a key over a `YYYY-MM-DD` window (default: this month): `requests`, `rejected`, `errors`, `prompt_tokens`, `completion_tokens`, `cost_usd`, `cache_hits`, `by_model`, `by_day`. Without `key`: per-key rollup + totals |
 | `GET /admin/logs?key=&limit=&status=&routed=1` | request log, newest first (`routed=1` → only `auto` decisions) |
 | `GET /admin/cache/stats[?key=]` | lookups, hits, hit rate, cost saved, entries, per-key breakdown |
-| `GET /admin/providers/health` | per-provider error rate / latency from live traffic; gateway added-latency percentiles |
+| `GET /admin/providers/health` | per-provider error rate / latency from live traffic, plus circuit state (`circuit`, `retry_in_s`, `trips`); gateway added-latency percentiles |
+| `GET /metrics` | Prometheus text exposition (requests by outcome, tokens, spend, cache, guardrail events, circuit state, provider health, per-key budget use) |
+| `GET /admin/config` | effective gateway config (provider secrets are never included) |
+| `PATCH /admin/keys/{key}` | partial key update, applied live: `team`, `monthly_budget_usd`, `rate_limit`, `model_allowlist`, `semantic_cache` |
+| `DELETE /admin/cache[?key=]` | purge one key's cache entries, or all of them |
 | `GET /admin/routing/eval[?file=]` | run the routing eval over `data/<file>` |
 | `GET/POST /admin/keys`, `POST /admin/keys/{key}/disable\|enable\|rotate` | key management |
 | `GET /console` | ops console (a static page that calls the endpoints above) |
@@ -285,7 +289,7 @@ scripts/          provided mock/smoke/load scripts + demo.py (10-step demo) + ve
 
 ### Request pipeline and check order
 
-Auth → body validation → alias resolution → allowlist → budget → rate limit → (`auto` classification) → cache → upstream. The order is deliberate: cheap, certain rejections come first; **the rate-limit slot is consumed only after budget passes**, so a key that is over budget cannot also burn its request quota; an `auto` request is classified only after it is admitted. Each rejection type has its own status and `type`.
+Auth → body validation → alias resolution → allowlist → guardrails (PII redaction / injection screening) → budget → rate limit → (`auto` classification) → cache → upstream. The order is deliberate: cheap, certain rejections come first; **the rate-limit slot is consumed only after budget passes**, so a key that is over budget cannot also burn its request quota; an `auto` request is classified only after it is admitted. Each rejection type has its own status and `type`.
 
 ### Design decisions
 
@@ -332,7 +336,9 @@ Failover sets `x-prism-fallback: true`, and `retries` in the log counts failed u
 
 *Good To Have, also done:* response-quality escalation (cheap-tier refusal → retried on `smart`, both calls billed, only for keys allowed `smart`) · provider health endpoint · tokens-per-minute limits · key-management APIs (create / disable / enable / rotate) · usage by model and by day · cache TTL and cached answers replayed as SSE · added-latency percentiles.
 
-*Not done:* AI guardrails (injection/PII), distributed rate limiting, weighted/least-latency routing, a second wire format, cost-anomaly alerts, orgs.
+*Also done:* per-provider circuit breaker (a dead primary is skipped after 3 consecutive failures, probed once per cooldown, fail-open if every circuit is open; `x-prism-circuit-skipped` header) · guardrails (PII / secret redaction before the cache and the provider, injection flagging, optional blocking; `x-prism-guardrail` header and `flags` in the request log) · `x-prism-budget-remaining-usd` header · Prometheus `/metrics` · live key updates, cache purge and config view in the admin plane.
+
+*Not done:* distributed rate limiting, weighted/least-latency routing, a second wire format, cost-anomaly alerts, orgs.
 
 ---
 
