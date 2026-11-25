@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" width="1000" height="400" role="img" aria-label="Animated request pipeline: auth, validate, allowlist, budget, rate limit, classify, cache, upstream with failover, meter and log, response">
+  <defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 10 5 0 10z" fill="#586079"/></marker>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      .box { fill:#171a21; stroke:#2f3544; stroke-width:1.5; }
+      .t1 { fill:#e8eaf0; font-size:14px; font-weight:650; text-anchor:middle; }
+      .t2 { fill:#8b91a1; font-size:11px; text-anchor:middle; }
+      .rej { fill:#f4645f; font-size:11px; font-weight:700; text-anchor:middle; }
+      .lbl { fill:#8b91a1; font-size:11px; }
+      .pulse { animation: pulse 9s infinite; }
+      @keyframes pulse { 0%,100% { stroke:#2f3544; } 50% { stroke:#7c6cff; } }
+    </style>
+  </defs>
+  <rect width="1000" height="400" rx="16" fill="#0e0f13"/>
+  <rect x=".5" y=".5" width="999" height="399" rx="16" fill="none" stroke="#262b36"/>
+  <text x="24" y="28" fill="#e8eaf0" font-size="15" font-weight="700">Request pipeline <tspan fill="#8b91a1" font-weight="400">— cheap, certain rejections first; everything after admission is metered</tspan></text>
+
+  <!-- rails -->
+  <path d="M85 90 H855 V240 H239" fill="none" stroke="#2f3544" stroke-width="2" marker-end="url(#ar)"/>
+  <path d="M701 268 V345 H239 V268" fill="none" stroke="#2c4a6e" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#ar)">
+    <animate attributeName="stroke-dashoffset" from="24" to="0" dur="1.4s" repeatCount="indefinite"/>
+  </path>
+  <text x="470" y="338" fill="#4aa8ff" font-size="12" text-anchor="middle" font-weight="650">cache hit · $0 · upstream skipped</text>
+
+  <!-- row 1 -->
+  <g>
+    <rect class="box" x="20"  y="62" width="130" height="56" rx="12"/><text class="t1" x="85"  y="86">Client</text><text class="t2" x="85" y="103">Bearer virtual key</text>
+    <rect class="box pulse" x="174" y="62" width="130" height="56" rx="12" style="animation-delay:.5s"/><text class="t1" x="239" y="86">1 · Auth</text><text class="t2" x="239" y="103">key → tenant</text>
+    <rect class="box pulse" x="328" y="62" width="130" height="56" rx="12" style="animation-delay:1s"/><text class="t1" x="393" y="86">2 · Validate</text><text class="t2" x="393" y="103">body · alias</text>
+    <rect class="box pulse" x="482" y="62" width="130" height="56" rx="12" style="animation-delay:1.5s"/><text class="t1" x="547" y="86">3 · Allowlist</text><text class="t2" x="547" y="103">model policy</text>
+    <rect class="box pulse" x="636" y="62" width="130" height="56" rx="12" style="animation-delay:2s"/><text class="t1" x="701" y="86">4 · Budget</text><text class="t2" x="701" y="103">spent &lt; monthly cap</text>
+    <rect class="box pulse" x="790" y="62" width="130" height="56" rx="12" style="animation-delay:2.5s"/><text class="t1" x="855" y="86">5 · Rate limit</text><text class="t2" x="855" y="103">sliding window, atomic</text>
+  </g>
+  <!-- rejection codes -->
+  <g><text class="rej" x="239" y="52">✕ 401</text><text class="rej" x="393" y="52">✕ 400 / 404</text><text class="rej" x="547" y="52">✕ 403</text><text class="rej" x="701" y="52">✕ 402</text><text class="rej" x="855" y="52">✕ 429</text></g>
+
+  <!-- row 2 (right to left) -->
+  <g>
+    <rect class="box pulse" x="790" y="212" width="130" height="56" rx="12" style="animation-delay:3s"/><text class="t1" x="855" y="236">6 · Classify</text><text class="t2" x="855" y="253">model = auto → tier</text>
+    <rect class="box pulse" x="636" y="212" width="130" height="56" rx="12" style="animation-delay:3.5s"/><text class="t1" x="701" y="236">7 · Cache</text><text class="t2" x="701" y="253">per-key, semantic</text>
+    <rect class="box pulse" x="482" y="212" width="130" height="56" rx="12" style="animation-delay:4s"/><text class="t1" x="547" y="236">8 · Upstream</text><text class="t2" x="547" y="253">timeout · retry · failover</text>
+    <rect class="box pulse" x="328" y="212" width="130" height="56" rx="12" style="animation-delay:5s"/><text class="t1" x="393" y="236">9 · Meter + log</text><text class="t2" x="393" y="253">one transaction</text>
+    <rect class="box" x="174" y="212" width="130" height="56" rx="12"/><text class="t1" x="239" y="236">Response</text><text class="t2" x="239" y="253">x-prism-* headers</text>
+  </g>
+
+  <!-- providers + failover loop -->
+  <g>
+    <rect x="455" y="148" width="76" height="26" rx="13" fill="#171a21" stroke="#3ecf8e"/><text x="493" y="165" fill="#3ecf8e" font-size="12" text-anchor="middle" font-weight="650">alpha</text>
+    <rect x="563" y="148" width="76" height="26" rx="13" fill="#171a21" stroke="#f5a524"/><text x="601" y="165" fill="#f5a524" font-size="12" text-anchor="middle" font-weight="650">beta</text>
+    <path d="M530 210 L505 176 M564 210 L589 176" stroke="#586079" stroke-width="1.5" fill="none"/>
+    <text x="547" y="192" class="lbl" text-anchor="middle">5xx → retry → failover</text>
+    <circle r="5" fill="#f5a524" filter="url(#glow)" opacity="0">
+      <animateMotion dur="9s" begin="1s" repeatCount="indefinite" path="M547 210 L493 176 L547 210 L601 176 L547 210"/>
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;.30;.34;.46;.5;1" dur="9s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- packets -->
+  <circle r="7" fill="#3ecf8e" filter="url(#glow)">
+    <animateMotion dur="9s" repeatCount="indefinite" path="M85 90 H855 V240 H239" keyPoints="0;1" keyTimes="0;1" calcMode="linear"/>
+  </circle>
+  <circle r="7" fill="#4aa8ff" filter="url(#glow)">
+    <animateMotion dur="7s" begin="4.5s" repeatCount="indefinite" path="M85 90 H855 V240 H701 V345 H239 V268"/>
+  </circle>
+  <!-- legend -->
+  <g transform="translate(24,378)">
+    <circle cx="5" cy="-4" r="5" fill="#3ecf8e"/><text class="lbl" x="16" y="0">cache miss → upstream</text>
+    <circle cx="200" cy="-4" r="5" fill="#4aa8ff"/><text class="lbl" x="211" y="0">cache hit → skips upstream</text>
+    <circle cx="420" cy="-4" r="5" fill="#f5a524"/><text class="lbl" x="431" y="0">provider failure → retry / failover</text>
+    <text class="rej" x="690" y="0" text-anchor="start">✕</text><text class="lbl" x="704" y="0">distinct rejection per stage, always logged</text>
+  </g>
+</svg>

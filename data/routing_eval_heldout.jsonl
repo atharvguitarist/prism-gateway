@@ -1,0 +1,30 @@
+{"id": "held_001", "expected_tier": "fast", "note": "short fact", "prompt": "Who wrote the novel Pride and Prejudice?"}
+{"id": "held_002", "expected_tier": "fast", "note": "short fact", "prompt": "What is the boiling point of water at sea level in Celsius?"}
+{"id": "held_003", "expected_tier": "fast", "note": "short formatting", "prompt": "Format this date as ISO 8601: March 4th, 2026."}
+{"id": "held_004", "expected_tier": "fast", "note": "short classification", "prompt": "Is the word 'serendipity' a noun or an adjective?"}
+{"id": "held_005", "expected_tier": "fast", "note": "short unit conversion", "prompt": "How many kilometers are in 26.2 miles?"}
+{"id": "held_006", "expected_tier": "fast", "note": "short rewrite", "prompt": "Make this sentence shorter: 'We are currently in the process of reviewing your application.'"}
+{"id": "held_007", "expected_tier": "fast", "note": "short greeting", "prompt": "Write a friendly one-sentence greeting for a newsletter."}
+{"id": "held_008", "expected_tier": "fast", "note": "short lookup", "prompt": "What does the acronym SQL stand for?"}
+{"id": "held_009", "expected_tier": "fast", "note": "trap: long table, trivial lookup", "prompt": "Here is the Q2 sales table. North: 1200 units, South: 950 units, East: 1430 units, West: 780 units, Central: 1105 units, Online: 2210 units, Wholesale: 1760 units, Export: 640 units, Retail partners: 990 units, Pop-up stores: 215 units. Which region sold the most units?"}
+{"id": "held_010", "expected_tier": "fast", "note": "trap: long paragraph, trivial extraction", "prompt": "Meeting notes: we spoke about the offsite, the new onboarding checklist, the vendor contract renewal, parking arrangements for visitors, and the holiday schedule. Action items were assigned to Dana (offsite venue), Ola (checklist), Marcus (contract), and Yuki (parking). The next meeting is on Thursday at 10:30. What time is the next meeting?"}
+{"id": "held_011", "expected_tier": "fast", "note": "trap: long text, trivial counting", "prompt": "Read this list of attendees: Aiko, Ben, Carla, Dev, Elena, Farid, Grace, Hugo, Ines, Jamal, Kira, Leo, Mara, Nils, Omar, Paula. How many attendees are listed?"}
+{"id": "held_012", "expected_tier": "fast", "note": "trap: long config, trivial lookup", "prompt": "Our config file contains: host=db-prod-01, port=5432, user=svc_reporting, sslmode=require, pool_size=20, timeout=30, retries=3, region=eu-west-1, log_level=info, feature_flags=beta_ui,new_search. What is the configured port?"}
+{"id": "held_013", "expected_tier": "fast", "note": "trap: long email, trivial translation", "prompt": "Translate to French: 'Thank you for your patience while we resolved the delivery issue. Your replacement order has been dispatched and should arrive within three business days.'"}
+{"id": "held_014", "expected_tier": "fast", "note": "short lookup", "prompt": "Which planet is known as the Red Planet?"}
+{"id": "held_015", "expected_tier": "fast", "note": "short summary", "prompt": "Give me a one-sentence summary of what a REST API is."}
+{"id": "held_016", "expected_tier": "smart", "note": "trap: short, needs proof", "prompt": "Show that there are infinitely many prime numbers."}
+{"id": "held_017", "expected_tier": "smart", "note": "trap: short, needs derivation", "prompt": "Derive the formula for the sum of the first n squares."}
+{"id": "held_018", "expected_tier": "smart", "note": "trap: short, systems reasoning", "prompt": "Why might a retry policy make an outage worse? Walk through the failure dynamics."}
+{"id": "held_019", "expected_tier": "smart", "note": "trap: short, estimation", "prompt": "Estimate the annual electricity consumption of all data centers in the world and justify your numbers."}
+{"id": "held_020", "expected_tier": "smart", "note": "trap: short, tradeoff", "prompt": "When would you choose a message queue over direct RPC between microservices, and what do you give up?"}
+{"id": "held_021", "expected_tier": "smart", "note": "trap: short, concurrency", "prompt": "Explain how a database can produce a lost update under snapshot isolation and how to prevent it."}
+{"id": "held_022", "expected_tier": "smart", "note": "trap: short, debugging", "prompt": "A Go service leaks memory only under high load. How would you systematically find the cause?"}
+{"id": "held_023", "expected_tier": "smart", "note": "trap: short, math reasoning", "prompt": "Prove that the product of any three consecutive integers is divisible by 6."}
+{"id": "held_024", "expected_tier": "smart", "note": "complex design", "prompt": "Design the data model and API for a collaborative document editor that supports offline edits and conflict resolution. Discuss the consistency trade-offs of your approach."}
+{"id": "held_025", "expected_tier": "smart", "note": "complex plan", "prompt": "Outline a phased plan to migrate a 2 TB PostgreSQL database to a new major version with minimal downtime, including validation steps and a rollback strategy."}
+{"id": "held_026", "expected_tier": "smart", "note": "complex algorithm", "prompt": "Implement an LRU cache with O(1) get and put in Python, then explain why your data structures achieve that bound."}
+{"id": "held_027", "expected_tier": "smart", "note": "complex comparison", "prompt": "Compare Kafka and RabbitMQ for an event-driven order pipeline handling 50k events per second and recommend one, with reasoning about ordering and durability."}
+{"id": "held_028", "expected_tier": "smart", "note": "complex analysis", "prompt": "Analyze the security implications of storing JWTs in localStorage versus httpOnly cookies and recommend a strategy for a single-page app."}
+{"id": "held_029", "expected_tier": "smart", "note": "complex reasoning", "prompt": "Two services each retry failed calls three times with exponential backoff. Under a partial outage, how does the total load on the downstream service amplify, and how would you bound it?"}
+{"id": "held_030", "expected_tier": "smart", "note": "complex diagnosis", "prompt": "Latency on our checkout endpoint spikes every day at 02:00 UTC. Propose a ranked list of hypotheses and the data you would collect to test each one."}

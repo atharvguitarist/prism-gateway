@@ -1,0 +1,130 @@
+
+━━ Step 1: Both mock providers up, gateway healthy ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      GET /health?deep=1 → {"status": "ok", "service": "prism", "providers": {"alpha": "up", "beta": "up"}}
+   ✔ gateway healthy; alpha and beta reachable
+
+━━ Step 2: Non-streaming request (search team key → `fast` alias) ━━━━━━━━━━━━━━━━
+      HTTP 200  →  [alpha:alpha-small] Short version: (3aede0) What is a message queue and when sho…
+      x-prism-provider: alpha/alpha-small
+      x-prism-cache: miss
+      x-prism-fallback: false
+      x-prism-cost-usd: 0.0000168
+   ✔ served by a provider, cache miss, cost metered from provider-reported usage
+
+━━ Step 3: Streaming request — tokens arrive one by one ━━━━━━━━━━━━━━━━━━━━━━━━━━
+      x-prism-provider: alpha/alpha-small
+      x-prism-cache: miss
+      x-prism-fallback: false
+      +    0 ms  ''
+      +    0 ms  '[alpha:alpha-small] '
+      +   20 ms  'Regarding '
+      +   40 ms  '(3aede0) '
+      +   61 ms  'Explain '
+      +   81 ms  'how '
+      +  101 ms  'server-sent '
+      … 24 events in 427 ms; last event: [DONE]
+   ✔ stream is progressive (not buffered) and terminates with [DONE]
+
+━━ Step 4: Semantic cache: repeat, paraphrase, and a near-miss (pair A) ━━━━━━━━━━
+      ask         x-prism-cache: miss  cost: 0.0000147     «How do I reset my password on the dashboard?»
+      repeat      x-prism-cache: hit   cost: 0          similarity 1.000   «How do I reset my password on the dashboard?»
+      paraphrase  x-prism-cache: hit   cost: 0          similarity 1.000   «What are the steps to reset my dashboard password?»
+      near-miss   x-prism-cache: miss  cost: 0.00001845    «How do I reset my two-factor authentication on the dash»
+   ✔ repeat and paraphrase hit at $0; different-intent prompt (2FA reset) is NOT served the password answer
+      tenant isolation: the same prompt from a *different* team must miss
+      other team, identical prompt → x-prism-cache: miss
+   ✔ cache is scoped per key — no cross-tenant leak
+
+━━ Step 5: Smart routing (`auto`, research key): short-but-hard vs long-but-trivial ━━
+      route_011 (9 words) «Prove that the square root of 2 is irrational.…»
+      x-prism-provider: alpha/alpha-large
+      x-prism-cache: miss
+      x-prism-fallback: false
+      x-prism-cost-usd: 0.000567
+      x-prism-route: auto:smart
+      x-prism-route-reason: auto->smart (score +3.0): proof/derivation +3
+   ✔ route_011 routed to `smart`
+      route_006 (65 words) «Here is our on-call roster for the next two weeks: Monday - …»
+      x-prism-provider: alpha/alpha-small
+      x-prism-cache: miss
+      x-prism-fallback: false
+      x-prism-cost-usd: 0.00002415
+      x-prism-route: auto:fast
+      x-prism-route-reason: auto->fast (score -1.5): how-many/which/time lookup -1.5
+   ✔ route_006 routed to `fast`
+      routing eval over data/routing_eval.jsonl: 20/20 = 100% (length-only baseline: 40%)
+   ✔ router beats the length-only baseline
+
+━━ Step 6: Rate limiting: burst past the free-tier key's 10 req/min ━━━━━━━━━━━━━━
+      Bursting 30 requests at concurrency 10 ...
+      Burst finished in 1.1s
+        accepted (200):      10
+        rate limited (429):  20
+        latency avg/p95 ms:  134 / 46
+      Client-side accounting totals - compare with your usage API for this key:
+        accepted requests:   10
+        prompt tokens:       120
+        completion tokens:   265
+        sum of cost headers: 0.000177 USD (10 of 10 had a numeric header)
+      Over-admission check OK: 10 accepted <= limit 10.
+
+      next request → HTTP 429  {"message": "Rate limit exceeded (10 requests/minute). Retry in 59s", "type": "rate_limit_exceeded", "code": "rate_limit_exceeded"}   retry-after: 59s
+   ✔ zero over-admission; the rest are clean 429 rate_limit_exceeded
+      usage API for this key: requests=10 prompt=120 completion=265 cost=$0.000177
+
+━━ Step 7: Budget: the tiny-budget key gets one request, then is rejected ━━━━━━━━
+      1st → HTTP 200, cost 0.0000168
+      2nd → HTTP 402  {"message": "Monthly budget of $0.00001 exhausted for this key (spent $0.0000168)", "type": "budget_exceeded", "code": "budget_exceeded"}
+   ✔ second request rejected with budget_exceeded
+
+━━ Step 8: Failure drill: take provider alpha down, live ━━━━━━━━━━━━━━━━━━━━━━━━━
+      x-prism-provider: beta/beta-small
+      x-prism-cache: miss
+      x-prism-fallback: true
+      x-prism-cost-usd: 0.0000078
+   ✔ alpha down → served by beta with x-prism-fallback: true (0.6s incl. retries)
+      …now alpha is merely SLOW (3 s) — the 2 s upstream timeout must keep the client from hanging
+      answered in 2.0s by beta/beta-small (fallback=true)
+   ✔ slow provider → timeout fires → fallback; no hang
+      …alpha flaky (30% errors): 20 requests
+   ✔ retries absorb a 30% error rate (20/20 succeeded)
+   ✔ alpha restored → traffic returns to the primary
+
+━━ Step 9: Ops console ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      cache stats: 5 hits / 28 lookups = 18%, saved $0.000081
+      open  http://127.0.0.1:18080/console   (admin token: prism-admin-demo)
+   ✔ cache hits are visible in the cache stats
+
+━━ Step 10: Provided smoke test ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      [1] Non-streaming completion + header contract
+        PASS  returns 200  (got 200)
+        PASS  body has choices and usage
+        PASS  header x-prism-provider present  (alpha/alpha-small)
+        PASS  header x-prism-cache present  (miss)
+        PASS  header x-prism-cost-usd present  (0.0000123)
+        PASS  first request is a cache miss  (miss)
+      [2] Streaming
+        PASS  returns 200  (got 200)
+        PASS  content-type is text/event-stream  (text/event-stream; charset=utf-8)
+        PASS  received multiple SSE chunks  (20 data lines)
+        PASS  stream ends with [DONE]
+      [3] Auth
+        PASS  invalid key rejected with 401/403  (got 401)
+      [4] Unknown model
+        PASS  unknown model rejected with 4xx  (got 404)
+        PASS  error body explains the problem  ({'error': {'message': "Unknown model or alias 'no-such-model-xyz'. Available ali)
+      [5] Semantic cache: exact repeat
+        PASS  identical repeat is a cache hit  (hit)
+      [6] Semantic cache: paraphrases (each pair soft; at least one pair must hit)
+        PASS  pair A paraphrase is a cache hit  (hit)
+        PASS  pair B paraphrase is a cache hit  (hit)
+        PASS  matching is semantic, not exact-only (at least one pair hit)
+      [7] Semantic cache: unrelated prompt
+        PASS  unrelated prompt is a cache miss  (miss)
+      ==================================================
+        18 passed, 0 warnings, 0 failed
+
+   ✔ smoke test passes
+
+══════════════════════════════════════════════════════════════════════════
+ALL CHECKS PASSED

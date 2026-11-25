@@ -1,0 +1,33 @@
+Routing eval: data/routing_eval_heldout.jsonl
+  OK   held_001   expected=fast  actual=fast  score=-2.0  short fact
+  OK   held_002   expected=fast  actual=fast  score=-2.5  short fact
+  OK   held_003   expected=fast  actual=fast  score=-2.5  short formatting
+  OK   held_004   expected=fast  actual=fast  score=-2.0  short classification
+  OK   held_005   expected=fast  actual=fast  score=-4.5  short unit conversion
+  OK   held_006   expected=fast  actual=fast  score=+0.0  short rewrite
+  OK   held_007   expected=fast  actual=fast  score=-2.0  short greeting
+  OK   held_008   expected=fast  actual=fast  score=-3.5  short lookup
+  OK   held_009   expected=fast  actual=fast  score=-1.5  trap: long table, trivial lookup
+  OK   held_010   expected=fast  actual=fast  score=-1.5  trap: long paragraph, trivial extraction
+  OK   held_011   expected=fast  actual=fast  score=-1.5  trap: long text, trivial counting
+  OK   held_012   expected=fast  actual=fast  score=+1.5  trap: long config, trivial lookup
+  OK   held_013   expected=fast  actual=fast  score=-2.5  trap: long email, trivial translation
+  OK   held_014   expected=fast  actual=fast  score=-1.5  short lookup
+  OK   held_015   expected=fast  actual=fast  score=-2.0  short summary
+  OK   held_016   expected=smart actual=smart score=+3.0  trap: short, needs proof
+  OK   held_017   expected=smart actual=smart score=+3.0  trap: short, needs derivation
+  OK   held_018   expected=smart actual=smart score=+6.5  trap: short, systems reasoning
+  OK   held_019   expected=smart actual=smart score=+5.0  trap: short, estimation
+  OK   held_020   expected=smart actual=smart score=+2.5  trap: short, tradeoff
+  OK   held_021   expected=smart actual=smart score=+4.0  trap: short, concurrency
+  OK   held_022   expected=smart actual=smart score=+3.5  trap: short, debugging
+  OK   held_023   expected=smart actual=smart score=+3.0  trap: short, math reasoning
+  OK   held_024   expected=smart actual=smart score=+5.0  complex design
+  OK   held_025   expected=smart actual=smart score=+3.0  complex plan
+  OK   held_026   expected=smart actual=smart score=+4.5  complex algorithm
+  OK   held_027   expected=smart actual=smart score=+6.5  complex comparison
+  OK   held_028   expected=smart actual=smart score=+5.0  complex analysis
+  OK   held_029   expected=smart actual=smart score=+5.5  complex reasoning
+  OK   held_030   expected=smart actual=smart score=+4.5  complex diagnosis
+
+Accuracy: 30/30 = 100%   (length-only baseline: 47%)

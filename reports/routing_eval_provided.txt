@@ -1,0 +1,23 @@
+Routing eval: data/routing_eval.jsonl
+  OK   route_001  expected=fast  actual=fast  score=-3.0  short, easy fact
+  OK   route_002  expected=fast  actual=fast  score=-3.5  short, easy conversion
+  OK   route_003  expected=fast  actual=fast  score=-2.0  short, easy writing
+  OK   route_004  expected=fast  actual=fast  score=-3.5  short, easy definition
+  OK   route_005  expected=fast  actual=fast  score=-2.5  short, easy translation
+  OK   route_006  expected=fast  actual=fast  score=-1.5  trap: long input, trivial lookup task
+  OK   route_007  expected=fast  actual=fast  score=-3.5  trap: long input, trivial extraction task
+  OK   route_008  expected=fast  actual=fast  score=-2.5  short, easy extraction
+  OK   route_009  expected=fast  actual=fast  score=-2.0  short, easy arithmetic
+  OK   route_010  expected=fast  actual=fast  score=-2.5  trap: longer input, trivial rewrite task
+  OK   route_011  expected=smart actual=smart score=+3.0  trap: short but hard proof
+  OK   route_012  expected=smart actual=smart score=+2.5  trap: short but multi-step estimation
+  OK   route_013  expected=smart actual=smart score=+8.5  trap: short but deep systems reasoning
+  OK   route_014  expected=smart actual=smart score=+6.0  complex design task
+  OK   route_015  expected=smart actual=smart score=+6.5  complex comparison and recommendation
+  OK   route_016  expected=smart actual=smart score=+5.5  hard algorithm with explanation
+  OK   route_017  expected=smart actual=smart score=+5.5  deep distributed-systems question
+  OK   route_018  expected=smart actual=smart score=+6.5  complex planning task
+  OK   route_019  expected=smart actual=smart score=+7.0  trap: shortish but expert debugging
+  OK   route_020  expected=smart actual=smart score=+3.0  trap: short but requires a proof
+
+Accuracy: 20/20 = 100%   (length-only baseline: 40%)

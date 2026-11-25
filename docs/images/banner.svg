@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 230" width="1000" height="230" role="img" aria-label="Prism - LLM gateway and semantic cache">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0e0f13"/><stop offset="1" stop-color="#1b1740"/></linearGradient>
+    <linearGradient id="tri" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c6cff"/><stop offset="1" stop-color="#2ec4b6"/></linearGradient>
+    <linearGradient id="beam" gradientUnits="userSpaceOnUse" x1="40" y1="0" x2="170" y2="0"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".95"/></linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1000" height="230" rx="18" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="999" height="229" rx="18" fill="none" stroke="#2b2f3d"/>
+  <!-- incoming beam -->
+  <line x1="40" y1="118" x2="170" y2="118" stroke="url(#beam)" stroke-width="3" stroke-dasharray="14 8" filter="url(#glow)">
+    <animate attributeName="stroke-dashoffset" from="44" to="0" dur="1.2s" repeatCount="indefinite"/>
+  </line>
+  <!-- prism -->
+  <path d="M175 58 235 178H115z" fill="rgba(124,108,255,.12)" stroke="url(#tri)" stroke-width="3" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M175 58V178M145 118 205 140" stroke="url(#tri)" stroke-width="1.5" opacity=".7"/>
+  <!-- split rays -->
+  <g stroke-width="3" stroke-linecap="round" stroke-dasharray="16 9" filter="url(#glow)">
+    <line x1="215" y1="108" x2="360" y2="52"  stroke="#7c6cff"><animate attributeName="stroke-dashoffset" from="50" to="0" dur="1.6s" repeatCount="indefinite"/></line>
+    <line x1="220" y1="118" x2="360" y2="104" stroke="#4aa8ff"><animate attributeName="stroke-dashoffset" from="50" to="0" dur="1.4s" repeatCount="indefinite"/></line>
+    <line x1="222" y1="128" x2="360" y2="156" stroke="#2ec4b6"><animate attributeName="stroke-dashoffset" from="50" to="0" dur="1.8s" repeatCount="indefinite"/></line>
+    <line x1="218" y1="138" x2="360" y2="208" stroke="#f5a524"><animate attributeName="stroke-dashoffset" from="50" to="0" dur="1.5s" repeatCount="indefinite"/></line>
+  </g>
+  <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#aab0c0">
+    <text x="372" y="56">keys · budgets · rate limits</text>
+    <text x="372" y="108">semantic cache · $0 hits</text>
+    <text x="372" y="160">failover · retries · streaming</text>
+    <text x="372" y="212">auto difficulty routing</text>
+  </g>
+  <g font-family="Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+    <text x="640" y="104" font-size="64" font-weight="800" fill="url(#tri)">Prism</text>
+    <text x="642" y="138" font-size="19" fill="#e8eaf0">LLM gateway &amp; semantic cache</text>
+    <text x="642" y="166" font-size="14" fill="#8b91a1">OpenAI-compatible · multi-tenant · cost-metered</text>
+  </g>
+</svg>

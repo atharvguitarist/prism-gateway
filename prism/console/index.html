@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prism · Ops Console</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3 29 27H3z' fill='none' stroke='%237c6cff' stroke-width='2.5' stroke-linejoin='round'/%3E%3Cpath d='M16 3v24M9.5 15 22.5 20' stroke='%237c6cff' stroke-width='1.5'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg:#0e0f13; --bg2:#14161c; --panel:#171a21; --panel2:#1d212a; --ink:#e8eaf0; --muted:#8b91a1; --line:#262b36;
+    --accent:#7c6cff; --accent2:#2ec4b6; --ok:#3ecf8e; --warn:#f5a524; --bad:#f4645f; --hit:#4aa8ff;
+    --shadow:0 1px 0 rgba(255,255,255,.03) inset, 0 8px 24px rgba(0,0,0,.25);
+  }
+  :root[data-theme=light] {
+    --bg:#f5f6fa; --bg2:#eceef4; --panel:#ffffff; --panel2:#f3f4f9; --ink:#171a21; --muted:#667085; --line:#e3e6ee;
+    --accent:#5b45f0; --accent2:#0f9d8f; --ok:#12805c; --warn:#b26a00; --bad:#c9372c; --hit:#0b6bcb;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 4px 16px rgba(16,24,40,.05);
+  }
+  * { box-sizing:border-box; }
+  html,body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; display:grid; grid-template-columns:228px 1fr; }
+  code, pre, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12.5px; }
+  aside { background:var(--bg2); border-right:1px solid var(--line); padding:18px 14px; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:6px; }
+  .brand { display:flex; align-items:center; gap:10px; padding:4px 8px 14px; font-weight:700; font-size:17px; letter-spacing:.2px; }
+  .brand svg { flex:none; }
+  .brand small { display:block; font-weight:500; font-size:11px; color:var(--muted); letter-spacing:.4px; }
+  nav button { all:unset; box-sizing:border-box; display:flex; align-items:center; gap:10px; width:100%; padding:9px 10px; border-radius:8px; color:var(--muted); cursor:pointer; font-weight:550; }
+  nav button:hover { background:var(--panel2); color:var(--ink); }
+  nav button[aria-selected=true] { background:linear-gradient(90deg,rgba(124,108,255,.22),rgba(124,108,255,.05)); color:var(--ink); box-shadow:inset 2px 0 0 var(--accent); }
+  nav svg { width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  .side-foot { margin-top:auto; display:grid; gap:8px; padding:8px; font-size:12px; color:var(--muted); }
+  .live { display:flex; align-items:center; gap:8px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 0 rgba(62,207,142,.6); animation:pulse 2s infinite; }
+  .dot.off { background:var(--muted); animation:none; }
+  @keyframes pulse { 70% { box-shadow:0 0 0 7px rgba(62,207,142,0); } 100% { box-shadow:0 0 0 0 rgba(62,207,142,0); } }
+  .main { min-width:0; }
+  header.top { display:flex; align-items:center; gap:12px; padding:14px 28px; border-bottom:1px solid var(--line); background:color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter:blur(8px); position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header.top h1 { font-size:18px; margin:0; font-weight:650; }
+  header.top .sp { flex:1; }
+  label.f { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; }
+  input, select, textarea { background:var(--panel2); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px 10px; font:inherit; }
+  input:focus, select:focus, textarea:focus { outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent); outline-offset:1px; }
+  button.b { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 14px; font:inherit; font-weight:600; cursor:pointer; }
+  button.b:hover { filter:brightness(1.1); } button.b:disabled { opacity:.5; cursor:default; }
+  button.g { background:transparent; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 11px; font:inherit; cursor:pointer; }
+  button.g:hover { background:var(--panel2); }
+  button.sm { padding:3px 9px; font-size:12px; }
+  .wrap { padding:22px 28px 70px; display:grid; gap:18px; max-width:1420px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); min-width:0; }
+  .tile { padding:16px 18px; position:relative; overflow:hidden; }
+  .tile .k { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; font-weight:600; }
+  .tile .v { font-size:28px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; letter-spacing:-.5px; }
+  .tile .s { color:var(--muted); font-size:12px; margin-top:2px; }
+  .tile::after { content:""; position:absolute; right:-24px; top:-24px; width:90px; height:90px; border-radius:50%; background:radial-gradient(circle,color-mix(in srgb,var(--accent) 22%,transparent),transparent 70%); }
+  .card > h2 { margin:0; padding:13px 18px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted); border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:10px; font-weight:650; }
+  .pad { padding:16px 18px; }
+  .scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; background:var(--panel); position:sticky; top:0; }
+  tbody tr:hover td { background:color-mix(in srgb,var(--panel2) 60%,transparent); }
+  tr:last-child td { border-bottom:0; }
+  td.n, th.n { text-align:right; }
+  .tag { display:inline-block; padding:1px 9px; border-radius:999px; font-size:11.5px; font-weight:600; background:color-mix(in srgb,currentColor 14%,transparent); }
+  .ok { color:var(--ok); } .hit { color:var(--hit); } .bad { color:var(--bad); } .warn { color:var(--warn); } .mut { color:var(--muted); } .acc { color:var(--accent); }
+  .bar { width:110px; height:7px; background:var(--line); border-radius:4px; overflow:hidden; display:inline-block; vertical-align:middle; }
+  .bar i { display:block; height:100%; background:linear-gradient(90deg,var(--accent),var(--accent2)); }
+  .bar i.over { background:var(--bad); }
+  .grid2 { display:grid; grid-template-columns:2fr 1fr; gap:18px; } .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; } .half { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:1100px) { .grid2,.grid3,.half { grid-template-columns:1fr; } }
+  @media (max-width:800px) { body { grid-template-columns:1fr; } aside { position:static; height:auto; flex-direction:row; flex-wrap:wrap; } .side-foot { display:none; } }
+  .prov { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; padding:16px 18px; }
+  .prov > div { border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:var(--panel2); }
+  .prov b { font-size:15px; }
+  .reason { max-width:520px; overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
+  #err { color:var(--bad); padding:10px 28px 0; font-weight:550; }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+  .legend i { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:6px; vertical-align:baseline; }
+  svg text { fill:var(--muted); font-size:10.5px; }
+  .play { display:grid; grid-template-columns:minmax(300px,380px) 1fr; gap:18px; }
+  @media (max-width:1000px) { .play { grid-template-columns:1fr; } }
+  .form { display:grid; gap:12px; } .form label { display:grid; gap:5px; font-size:12px; color:var(--muted); font-weight:600; }
+  .form textarea { min-height:130px; resize:vertical; font-size:14px; } .form .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; } .chip { cursor:pointer; padding:3px 10px; border-radius:999px; border:1px solid var(--line); font-size:12px; color:var(--muted); background:var(--panel2); }
+  .chip:hover { color:var(--ink); border-color:var(--accent); }
+  .answer { white-space:pre-wrap; background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:14px; min-height:90px; font-size:14.5px; }
+  .hdrs { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; margin-top:12px; }
+  .hdrs span:nth-child(odd) { color:var(--muted); }
+  .hidden { display:none !important; }
+  .empty { padding:26px; text-align:center; color:var(--muted); }
+  kbd { background:var(--panel2); border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:0 5px; font:11.5px ui-monospace,monospace; }
+  .toast { position:fixed; right:22px; bottom:22px; background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--accent); padding:12px 16px; border-radius:10px; box-shadow:var(--shadow); max-width:460px; z-index:20; word-break:break-all; }
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <svg width="30" height="30" viewBox="0 0 32 32"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c6cff"/><stop offset="1" stop-color="#2ec4b6"/></linearGradient></defs><path d="M16 3 29 27H3z" fill="none" stroke="url(#g)" stroke-width="2.5" stroke-linejoin="round"/><path d="M16 3v24M9.5 15 22.5 20" stroke="url(#g)" stroke-width="1.5"/></svg>
+    <div>Prism<small>LLM GATEWAY · OPS</small></div>
+  </div>
+  <nav role="tablist" id="nav">
+    <button role="tab" data-tab="overview" aria-selected="true"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Overview</button>
+    <button role="tab" data-tab="playground"><svg viewBox="0 0 24 24"><path d="m5 3 14 9-14 9z"/></svg>Playground</button>
+    <button role="tab" data-tab="keys"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3M14 9l2 2"/></svg>Virtual keys</button>
+    <button role="tab" data-tab="requests"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Requests</button>
+    <button role="tab" data-tab="routing"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="19" r="2.5"/><path d="M6 8.5c0 5 6 4 6 8M18 8.5c0 5-6 4-6 8"/></svg>Routing &amp; cache</button>
+  </nav>
+  <div class="side-foot">
+    <div class="live"><span class="dot" id="livedot"></span><span id="stamp">connecting…</span></div>
+    <label class="f">theme <select id="theme"><option value="dark">dark</option><option value="light">light</option></select></label>
+    <div>Shortcuts: <kbd>r</kbd> refresh · <kbd>1</kbd>–<kbd>5</kbd> tabs</div>
+  </div>
+</aside>
+
+<div class="main">
+<header class="top">
+  <h1 id="title">Overview</h1>
+  <span class="sp"></span>
+  <label class="f">admin token <input id="tok" type="password" size="16" value="prism-admin-demo" autocomplete="off"></label>
+  <label class="f">key <select id="keysel"><option value="">all keys</option></select></label>
+  <button class="b" id="go">Refresh</button>
+  <button class="g" id="auto">Auto: on</button>
+</header>
+<div id="err" role="alert"></div>
+
+<div class="wrap">
+
+<!-- ================= OVERVIEW ================= -->
+<div data-pane="overview" class="wrap" style="padding:0">
+  <div class="tiles" id="tiles"></div>
+  <div class="grid2">
+    <div class="card"><h2><span>Traffic — last 60 requests</span><span class="legend"><span><i style="background:var(--ok)"></i>served</span><span><i style="background:var(--hit)"></i>cache hit</span><span><i style="background:var(--warn)"></i>rejected</span><span><i style="background:var(--bad)"></i>error</span></span></h2><div class="pad" id="chTraffic"></div></div>
+    <div class="card"><h2><span>Cache outcome</span></h2><div class="pad" id="chDonut"></div></div>
+  </div>
+  <div class="half">
+    <div class="card"><h2><span>Spend vs budget by key (month)</span></h2><div class="pad" id="chSpend"></div></div>
+    <div class="card"><h2><span>Latency per request (ms)</span><span class="legend"><span><i style="background:var(--accent)"></i>upstream</span><span><i style="background:var(--hit)"></i>cache hit</span></span></h2><div class="pad" id="chLat"></div></div>
+  </div>
+  <div class="card"><h2><span>Provider health (last 60 s of live traffic)</span></h2><div class="prov" id="prov"></div></div>
+  <div class="card"><h2><span>Usage by key — current month (UTC)</span></h2><div class="scroll"><table id="usage"></table></div></div>
+</div>
+
+<!-- ================= PLAYGROUND ================= -->
+<div data-pane="playground" class="play hidden">
+  <div class="card pad form">
+    <label>Virtual key<select id="pgKey"></select></label>
+    <label>Model<select id="pgModel"></select></label>
+    <label>Prompt<textarea id="pgPrompt">What is your refund policy for annual subscriptions?</textarea></label>
+    <div class="chips" id="pgChips"></div>
+    <div class="row">
+      <label class="row" style="display:flex;gap:6px"><input type="checkbox" id="pgStream"> stream (SSE)</label>
+      <span style="flex:1"></span>
+      <button class="b" id="pgSend">Send</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2><span>Response</span><span id="pgMeta" class="mut"></span></h2>
+    <div class="pad">
+      <div class="answer" id="pgAnswer"><span class="mut">Send a request. Try the same question twice, then a paraphrase — the second goes to the semantic cache.</span></div>
+      <div class="hdrs mono" id="pgHdrs"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= KEYS ================= -->
+<div data-pane="keys" class="hidden" style="display:grid;gap:18px">
+  <div class="card"><h2><span>Virtual keys</span><span class="mut" id="keysNote"></span></h2><div class="scroll"><table id="keysTbl"></table></div></div>
+  <div class="card"><h2><span>Create a key</span></h2>
+    <div class="pad form" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));align-items:end">
+      <label>Team<input id="nkTeam" placeholder="growth"></label>
+      <label>Monthly budget (USD)<input id="nkBudget" type="number" step="0.01" value="5"></label>
+      <label>Requests / minute<input id="nkRpm" type="number" value="60"></label>
+      <label>Tokens / minute (0 = none)<input id="nkTpm" type="number" value="0"></label>
+      <label>Allowlist (comma-separated)<input id="nkAllow" value="fast,smart,auto"></label>
+      <button class="b" id="nkGo">Create key</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= REQUESTS ================= -->
+<div data-pane="requests" class="hidden">
+  <div class="card"><h2><span>Recent requests</span><span class="row" style="display:flex;gap:10px;align-items:center"><label class="f">status <select id="stSel"><option value="">any</option><option>ok</option><option>cache_hit</option><option>rejected_rate_limit</option><option>rejected_budget</option><option>rejected_model</option><option>error</option></select></label><span class="mut" id="logcount"></span></span></h2><div class="scroll"><table id="logs"></table></div></div>
+</div>
+
+<!-- ================= ROUTING & CACHE ================= -->
+<div data-pane="routing" class="hidden" style="display:grid;gap:18px">
+  <div class="half">
+    <div class="card"><h2><span>Semantic cache by key</span></h2><div class="scroll"><table id="cache"></table></div></div>
+    <div class="card"><h2><span>Routing accuracy (provided + held-out eval)</span><button class="g sm" id="evalGo">Run eval</button></h2><div class="pad" id="evalOut"><span class="mut">Click “Run eval” to score the router against the labelled sets.</span></div></div>
+  </div>
+  <div class="card"><h2><span>Smart-routing decisions (model = auto)</span></h2><div class="scroll"><table id="routes"></table></div></div>
+</div>
+
+</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let timer = null, autoOn = true, tab = "overview", keysCache = [];
+const TITLES = { overview:"Overview", playground:"Playground", keys:"Virtual keys", requests:"Requests", routing:"Routing & cache" };
+const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+$("tok").value = store.get("prism_admin_token", $("tok").value);
+document.documentElement.dataset.theme = store.get("prism_theme", "dark"); $("theme").value = document.documentElement.dataset.theme;
+$("theme").onchange = () => { document.documentElement.dataset.theme = $("theme").value; store.set("prism_theme", $("theme").value); };
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "x-admin-token": $("tok").value, "content-type": "application/json", ...(opts.headers || {}) } });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((body.error && body.error.message) || (path + " → HTTP " + r.status + (r.status === 401 ? " (check admin token)" : "")));
+  return body;
+}
+const usd = v => v == null ? "–" : (v === 0 ? "$0" : "$" + (v < 0.01 ? v.toFixed(6) : v.toFixed(4)));
+const pct = v => (100 * (v || 0)).toFixed(1) + "%";
+const short = k => !k ? "–" : (k.length > 22 ? k.slice(0, 20) + "…" : k);
+const statusTag = s => `<span class="tag ${s === "ok" ? "ok" : s === "cache_hit" ? "hit" : String(s).startsWith("rejected") ? "warn" : "bad"}">${esc(s)}</span>`;
+function toast(msg) { const t = document.createElement("div"); t.className = "toast"; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 7000); }
+
+/* ---------- tiny SVG chart helpers (no dependencies) ---------- */
+function trafficChart(rows) {
+  const d = rows.slice(0, 60).reverse(); if (!d.length) return '<div class="empty">no traffic yet — use the Playground or scripts/demo.py</div>';
+  const W = 760, H = 170, pad = 24, bw = Math.max(4, (W - pad * 2) / d.length - 2), max = Math.max(...d.map(x => Math.max(x.latency_ms, 1)));
+  const col = s => s === "ok" ? "var(--ok)" : s === "cache_hit" ? "var(--hit)" : String(s).startsWith("rejected") ? "var(--warn)" : "var(--bad)";
+  const bars = d.map((x, i) => { const h = Math.max(3, (x.latency_ms / max) * (H - 40)); return `<rect x="${pad + i * (bw + 2)}" y="${H - 20 - h}" width="${bw}" height="${h}" rx="2" fill="${col(x.status)}" opacity=".9"><title>${esc(x.status)} · ${x.latency_ms} ms · ${esc(x.requested_model)}</title></rect>`; }).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="request outcomes, bar height is latency"><text x="${pad}" y="12">bar height = latency (max ${max} ms)</text><line x1="${pad}" x2="${W - pad}" y1="${H - 19}" y2="${H - 19}" stroke="var(--line)"/>${bars}</svg>`;
+}
+function donut(parts) {
+  const total = parts.reduce((a, p) => a + p.v, 0); if (!total) return '<div class="empty">no lookups yet</div>';
+  let a0 = -Math.PI / 2; const R = 62, r = 40, cx = 90, cy = 80;
+  const arcs = parts.filter(p => p.v > 0).map(p => {
+    const a1 = a0 + (p.v / total) * Math.PI * 2 - 1e-4, large = a1 - a0 > Math.PI ? 1 : 0;
+    const pt = (rad, a) => `${(cx + rad * Math.cos(a)).toFixed(2)} ${(cy + rad * Math.sin(a)).toFixed(2)}`;
+    const dpath = `M${pt(R, a0)} A${R} ${R} 0 ${large} 1 ${pt(R, a1)} L${pt(r, a1)} A${r} ${r} 0 ${large} 0 ${pt(r, a0)}Z`; a0 = a1 + 1e-4;
+    return `<path d="${dpath}" fill="${p.c}"><title>${esc(p.l)}: ${p.v}</title></path>`;
+  }).join("");
+  const hit = parts[0].v / total;
+  return `<svg viewBox="0 0 180 160" width="100%" style="max-height:190px">${arcs}<text x="${cx}" y="${cy + 2}" text-anchor="middle" style="fill:var(--ink);font-size:20px;font-weight:700">${(hit * 100).toFixed(0)}%</text><text x="${cx}" y="${cy + 16}" text-anchor="middle">hit rate</text></svg>` +
+    `<div class="legend" style="justify-content:center">${parts.map(p => `<span><i style="background:${p.c}"></i>${esc(p.l)} ${p.v}</span>`).join("")}</div>`;
+}
+function spendChart(m) {
+  if (!m.length) return '<div class="empty">no keys</div>';
+  return m.map(k => { const w = Math.min(100, k.budget_used_pct || 0); return `<div style="margin:0 0 14px"><div style="display:flex;justify-content:space-between"><b>${esc(k.team)}</b><span class="mut mono">${usd(k.cost_usd)} / ${usd(k.budget_usd)}</span></div><div class="bar" style="width:100%;height:10px;margin-top:5px"><i class="${w >= 100 ? "over" : ""}" style="width:${w}%"></i></div></div>`; }).join("");
+}
+function latChart(rows) {
+  const d = rows.filter(x => x.status === "ok" || x.status === "cache_hit").slice(0, 60).reverse(); if (d.length < 2) return '<div class="empty">need a few served requests</div>';
+  const W = 560, H = 170, pad = 28, max = Math.max(...d.map(x => x.latency_ms), 1);
+  const xs = i => pad + (i / (d.length - 1)) * (W - pad * 2), ys = v => H - 22 - (v / max) * (H - 44);
+  const line = d.map((x, i) => `${i ? "L" : "M"}${xs(i).toFixed(1)} ${ys(x.latency_ms).toFixed(1)}`).join("");
+  const dots = d.map((x, i) => `<circle cx="${xs(i).toFixed(1)}" cy="${ys(x.latency_ms).toFixed(1)}" r="3" fill="${x.status === "cache_hit" ? "var(--hit)" : "var(--accent)"}"><title>${x.latency_ms} ms ${esc(x.status)}</title></circle>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%"><text x="${pad}" y="12">max ${max} ms</text><line x1="${pad}" x2="${W - pad}" y1="${H - 21}" y2="${H - 21}" stroke="var(--line)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.6" opacity=".7"/>${dots}</svg>`;
+}
+
+/* ---------- data refresh ---------- */
+async function refresh() {
+  try {
+    store.set("prism_admin_token", $("tok").value);
+    const key = $("keysel").value, kq = key ? "&key=" + encodeURIComponent(key) : "", cq = key ? "?key=" + encodeURIComponent(key) : "", st = $("stSel").value;
+    const [u, c, l, p, r, ks] = await Promise.all([
+      api("/admin/usage"), api("/admin/cache/stats" + cq),
+      api("/admin/logs?limit=" + (tab === "requests" ? 100 : 60) + kq + (st ? "&status=" + st : "")),
+      api("/admin/providers/health"), api("/admin/logs?routed=1&limit=20" + kq), api("/admin/keys"),
+    ]);
+    $("err").textContent = ""; $("livedot").classList.remove("off");
+    keysCache = ks.data; const sel = $("keysel"), cur = sel.value;
+    if (sel.options.length - 1 !== u.month.length) { sel.innerHTML = '<option value="">all keys</option>' + u.month.map(k => `<option value="${esc(k.key)}">${esc(k.team)} (${esc(short(k.key))})</option>`).join(""); sel.value = cur; }
+    const a = u.all_keys, oh = p.gateway_overhead_ms;
+    $("tiles").innerHTML = [
+      ["Requests served", a.requests, `${a.rejected} rejected · ${a.errors} errors`],
+      ["Spend (month)", usd(a.cost_usd), `${a.prompt_tokens + a.completion_tokens} tokens`],
+      ["Cache hit rate", pct(c.hit_rate), `${c.hits} hits / ${c.lookups} lookups`],
+      ["Cache savings", usd(c.cost_saved_usd), `${c.entries} entries stored`],
+      ["Gateway overhead", oh.n ? oh.p50_ms + " ms p50" : "–", oh.n ? `p95 ${oh.p95_ms} ms · n=${oh.n}` : "no traffic yet"],
+    ].map(([k, v, s]) => `<div class="card tile"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join("");
+    $("chTraffic").innerHTML = trafficChart(l.data);
+    $("chDonut").innerHTML = donut([{ l: "hit", v: c.hits, c: "var(--hit)" }, { l: "miss", v: Math.max(0, c.lookups - c.hits), c: "var(--line)" }]);
+    $("chSpend").innerHTML = spendChart(u.month); $("chLat").innerHTML = latChart(l.data);
+    $("usage").innerHTML = `<thead><tr><th>team</th><th>key</th><th>status</th><th class="n">requests</th><th class="n">prompt tok</th><th class="n">completion tok</th><th class="n">cache hits</th><th class="n">spend</th><th>budget used</th></tr></thead><tbody>` +
+      u.month.map(k => { const w = Math.min(100, k.budget_used_pct || 0);
+        return `<tr><td>${esc(k.team)}</td><td class="mut mono">${esc(short(k.key))}</td><td>${k.status === "active" ? '<span class="tag ok">active</span>' : '<span class="tag bad">' + esc(k.status) + '</span>'}</td><td class="n">${k.requests}</td><td class="n">${k.prompt_tokens}</td><td class="n">${k.completion_tokens}</td><td class="n">${k.cache_hits}</td><td class="n">${usd(k.cost_usd)} <span class="mut">/ ${usd(k.budget_usd)}</span></td><td><span class="bar"><i class="${w >= 100 ? "over" : ""}" style="width:${w}%"></i></span> <span class="mut">${(k.budget_used_pct ?? 0).toFixed(1)}%</span></td></tr>`; }).join("") + "</tbody>";
+    $("prov").innerHTML = p.data.map(x => { const cls = x.status === "healthy" ? "ok" : x.status === "degraded" ? "bad" : "mut";
+      return `<div><b>${esc(x.provider)}</b> <span class="tag ${cls}">${esc(x.status)}</span><br><span class="mut">${x.attempts} attempts · ${x.errors} errors (${pct(x.error_rate)})</span><br><span class="mut">avg ${x.avg_latency_ms ?? "–"} ms · p95 ${x.p95_latency_ms ?? "–"} ms</span>` + (x.last_error ? `<br><span class="warn">last error: ${esc(x.last_error.kind)} ${x.last_error.seconds_ago}s ago</span>` : "") + `</div>`; }).join("");
+    $("logcount").textContent = `latest ${l.data.length}`;
+    $("logs").innerHTML = `<thead><tr><th>time (UTC)</th><th>key</th><th>requested</th><th>served by</th><th>status</th><th class="n">tok in/out</th><th class="n">cost</th><th>cache</th><th>flags</th><th class="n">retries</th><th class="n">latency</th></tr></thead><tbody>` +
+      (l.data.length ? l.data.map(x => { const flags = [x.stream ? "stream" : "", x.fallback ? '<span class="warn">fallback</span>' : "", x.escalated ? '<span class="warn">escalated</span>' : ""].filter(Boolean).join(" · ");
+        return `<tr><td class="mut mono">${esc(x.created_at.slice(11, 23))}</td><td class="mut mono">${esc(short(x.virtual_key))}</td><td>${esc(x.requested_model)}</td><td>${x.resolved_provider ? esc(x.resolved_provider + "/" + x.resolved_model) : '<span class="mut">–</span>'}</td><td>${statusTag(x.status)}</td><td class="n">${x.prompt_tokens}/${x.completion_tokens}</td><td class="n">${usd(x.cost_usd)}</td><td>${x.cache === "hit" ? '<span class="hit">hit</span>' : '<span class="mut">miss</span>'}</td><td>${flags || '<span class="mut">–</span>'}</td><td class="n">${x.retries}</td><td class="n">${x.latency_ms} ms</td></tr>`; }).join("") : `<tr><td colspan="11" class="empty">no requests match</td></tr>`) + "</tbody>";
+    $("cache").innerHTML = `<thead><tr><th>key</th><th class="n">lookups</th><th class="n">hits</th><th class="n">hit rate</th></tr></thead><tbody>` +
+      (c.by_key.length ? c.by_key.map(k => `<tr><td class="mut mono">${esc(short(k.key))}</td><td class="n">${k.lookups}</td><td class="n">${k.hits}</td><td class="n">${pct(k.hit_rate)}</td></tr>`).join("") : `<tr><td class="mut" colspan="4">no cache lookups yet</td></tr>`) +
+      `<tr><td><b>all</b></td><td class="n">${c.lookups}</td><td class="n">${c.hits}</td><td class="n"><b>${pct(c.hit_rate)}</b></td></tr></tbody>`;
+    $("routes").innerHTML = `<thead><tr><th>time (UTC)</th><th>key</th><th>tier</th><th>why (score + matched signals)</th></tr></thead><tbody>` +
+      (r.data.length ? r.data.map(x => { const m = /auto->(\w+)/.exec(x.route_reason || ""); return `<tr><td class="mut mono">${esc(x.created_at.slice(11, 23))}</td><td class="mut mono">${esc(short(x.virtual_key))}</td><td><span class="tag ${m && m[1] === "smart" ? "acc" : "ok"}">${esc(m ? m[1] : "?")}</span></td><td class="reason" title="${esc(x.route_reason)}">${esc(x.route_reason)}</td></tr>`; }).join("") : `<tr><td class="empty" colspan="4">no auto-routed requests yet — send <code>"model": "auto"</code> from the Playground</td></tr>`) + "</tbody>";
+    renderKeys(u.month); fillPlayKeys(u.month);
+    $("stamp").textContent = "live · " + new Date().toLocaleTimeString();
+  } catch (e) { $("err").textContent = String(e.message || e); $("livedot").classList.add("off"); }
+}
+
+/* ---------- keys ---------- */
+function renderKeys(month) {
+  const byKey = Object.fromEntries(keysCache.map(k => [k.virtual_key || k.key, k]));
+  $("keysNote").textContent = month.length + " keys";
+  $("keysTbl").innerHTML = `<thead><tr><th>team</th><th>key</th><th>status</th><th class="n">rpm</th><th class="n">tpm</th><th>allowlist</th><th class="n">spend / budget</th><th>actions</th></tr></thead><tbody>` +
+    month.map(k => { const meta = byKey[k.key] || {}, rl = meta.rate_limit || {}, active = k.status === "active";
+      return `<tr><td><b>${esc(k.team)}</b></td><td class="mono mut">${esc(short(k.key))}</td><td>${active ? '<span class="tag ok">active</span>' : '<span class="tag bad">' + esc(k.status) + '</span>'}</td><td class="n">${esc(rl.requests_per_minute ?? "–")}</td><td class="n">${esc(rl.tokens_per_minute ?? "–")}</td><td class="mut">${esc((meta.model_allowlist || []).join(", ") || "–")}</td><td class="n">${usd(k.cost_usd)} / ${usd(k.budget_usd)}</td>` +
+        `<td><button class="g sm" data-act="${active ? "disable" : "enable"}" data-key="${esc(k.key)}">${active ? "Disable" : "Enable"}</button> <button class="g sm" data-act="rotate" data-key="${esc(k.key)}">Rotate</button> <button class="g sm" data-act="copy" data-key="${esc(k.key)}">Copy</button></td></tr>`; }).join("") + "</tbody>";
+}
+$("keysTbl").onclick = async e => {
+  const b = e.target.closest("button[data-act]"); if (!b) return; const key = b.dataset.key, act = b.dataset.act;
+  try {
+    if (act === "copy") { await navigator.clipboard.writeText(key); toast("Key copied to clipboard"); return; }
+    if (act === "rotate") { if (!confirm("Rotate this key? The old value stops working immediately.")) return; const r = await api(`/admin/keys/${encodeURIComponent(key)}/rotate`, { method: "POST" }); toast("New key: " + r.virtual_key); }
+    else { await api(`/admin/keys/${encodeURIComponent(key)}/${act}`, { method: "POST" }); toast(`Key ${act}d`); }
+    refresh();
+  } catch (err) { toast(String(err.message || err)); }
+};
+$("nkGo").onclick = async () => {
+  try {
+    const rl = { requests_per_minute: parseInt($("nkRpm").value, 10) }, tpm = parseInt($("nkTpm").value, 10); if (tpm > 0) rl.tokens_per_minute = tpm;
+    const body = { team: $("nkTeam").value.trim(), monthly_budget_usd: parseFloat($("nkBudget").value), rate_limit: rl, model_allowlist: $("nkAllow").value.split(",").map(s => s.trim()).filter(Boolean) };
+    const r = await api("/admin/keys", { method: "POST", body: JSON.stringify(body) }); toast("Created " + (r.virtual_key || r.key || "key")); $("nkTeam").value = ""; refresh();
+  } catch (err) { toast(String(err.message || err)); }
+};
+
+/* ---------- playground ---------- */
+const CHIPS = ["What is your refund policy for annual subscriptions?", "How do I get my money back on a yearly plan?", "Summarise this: caching reduces latency and cost for repeated questions.", "Design a multi-region failover strategy for a payments API and compare consistency trade-offs step by step.", "Prove that the sum of two even numbers is even."];
+$("pgChips").innerHTML = CHIPS.map((c, i) => `<span class="chip" data-i="${i}">${esc(c.length > 44 ? c.slice(0, 42) + "…" : c)}</span>`).join("");
+$("pgChips").onclick = e => { const c = e.target.closest(".chip"); if (c) $("pgPrompt").value = CHIPS[+c.dataset.i]; };
+function allowedFor(key) { const m = keysCache.find(k => (k.virtual_key || k.key) === key); return m && m.model_allowlist && m.model_allowlist.length ? m.model_allowlist : ["fast", "smart", "auto"]; }
+function fillPlayModels() {
+  const al = allowedFor($("pgKey").value), cur = $("pgModel").value;
+  $("pgModel").innerHTML = al.map(m => `<option>${esc(m)}</option>`).join(""); if (al.includes(cur)) $("pgModel").value = cur;
+}
+function fillPlayKeys(month) {
+  const sel = $("pgKey"); if (sel.options.length === month.length) return;
+  sel.innerHTML = month.map(k => `<option value="${esc(k.key)}">${esc(k.team)} · ${esc(short(k.key))}</option>`).join("");
+  const pref = month.find(k => allowedFor(k.key).includes("auto") && k.status === "active"); if (pref) sel.value = pref.key; fillPlayModels();
+}
+$("pgKey").onchange = fillPlayModels;
+$("pgSend").onclick = async () => {
+  const btn = $("pgSend"), ans = $("pgAnswer"); btn.disabled = true; ans.textContent = ""; $("pgHdrs").innerHTML = ""; $("pgMeta").textContent = "…";
+  const t0 = performance.now(), stream = $("pgStream").checked;
+  try {
+    const res = await fetch("/v1/chat/completions", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + $("pgKey").value },
+      body: JSON.stringify({ model: $("pgModel").value, stream, messages: [{ role: "user", content: $("pgPrompt").value }] }) });
+    const hdrs = [...res.headers.entries()].filter(([k]) => k.startsWith("x-prism-") || k === "retry-after");
+    $("pgHdrs").innerHTML = hdrs.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join("");
+    if (!res.ok) { const j = await res.json().catch(() => ({})); ans.innerHTML = `<span class="bad">HTTP ${res.status}</span> ${esc((j.error && j.error.message) || "")}`; }
+    else if (stream) {
+      const rd = res.body.getReader(), dec = new TextDecoder(); let buf = "";
+      for (;;) { const { done, value } = await rd.read(); if (done) break; buf += dec.decode(value, { stream: true }); let i;
+        while ((i = buf.indexOf("\n\n")) >= 0) { const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+          for (const ln of ev.split("\n")) { if (!ln.startsWith("data:")) continue; const d = ln.slice(5).trim(); if (d === "[DONE]") continue;
+            try { const j = JSON.parse(d); if (j.error) ans.innerHTML += `<span class="bad"> [stream error: ${esc(j.error.message)}]</span>`; else ans.append(((j.choices || [])[0] || {}).delta?.content || ""); } catch (e) {} } } }
+    } else { const j = await res.json(); ans.textContent = (((j.choices || [])[0] || {}).message || {}).content || JSON.stringify(j, null, 2); }
+    $("pgMeta").textContent = Math.round(performance.now() - t0) + " ms round trip";
+  } catch (e) { ans.innerHTML = `<span class="bad">${esc(e.message || e)}</span>`; }
+  btn.disabled = false; refresh();
+};
+
+/* ---------- routing eval ---------- */
+$("evalGo").onclick = async () => {
+  $("evalOut").textContent = "running…";
+  try { const out = [];
+    for (const f of ["routing_eval.jsonl", "routing_eval_heldout.jsonl"]) { const r = await api("/admin/routing/eval?file=" + f); out.push(`<div style="margin-bottom:12px"><b>${esc(f)}</b><br><span class="${r.accuracy === 1 ? "ok" : "warn"} mono">${r.correct ?? "?"}/${r.total ?? "?"} correct · accuracy ${pct(r.accuracy)}</span></div>`); }
+    $("evalOut").innerHTML = out.join("");
+  } catch (e) { $("evalOut").innerHTML = `<span class="bad">${esc(e.message || e)}</span>`; }
+};
+
+/* ---------- navigation ---------- */
+function show(t) {
+  tab = t; $("title").textContent = TITLES[t];
+  document.querySelectorAll("[data-pane]").forEach(p => p.classList.toggle("hidden", p.dataset.pane !== t));
+  document.querySelectorAll("#nav button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  location.hash = t; refresh();
+}
+$("nav").onclick = e => { const b = e.target.closest("button[data-tab]"); if (b) show(b.dataset.tab); };
+document.addEventListener("keydown", e => { if (/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) || e.metaKey || e.ctrlKey) return;
+  if (e.key === "r") refresh(); const i = "12345".indexOf(e.key); if (i >= 0) show(Object.keys(TITLES)[i]); });
+function schedule() { clearInterval(timer); if (autoOn) timer = setInterval(() => { if (tab !== "playground" || !$("pgSend").disabled) refresh(); }, 2500); }
+$("go").onclick = refresh; $("keysel").onchange = refresh; $("stSel").onchange = refresh;
+$("auto").onclick = () => { autoOn = !autoOn; $("auto").textContent = "Auto: " + (autoOn ? "on" : "off"); schedule(); };
+const h0 = location.hash.slice(1); show(TITLES[h0] ? h0 : "overview"); schedule();
+</script>
+</body>
+</html>
